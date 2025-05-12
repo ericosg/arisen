@@ -1,8 +1,0 @@
-[gd_resource type="Resource" script_class="Spell" load_steps=2 format=3 uid="uid://dmd6d85vy5ugj"]
-
-[ext_resource type="Script" uid="uid://ly2drib2gi3g" path="res://scripts/Spell.gd" id="1_0gw84"]
-
-[resource]
-script = ExtResource("1_0gw84")
-cost_by_level = Array[int]([3, 4, 5, 5, 6])
-metadata/_custom_type_script = "uid://ly2drib2gi3g"
