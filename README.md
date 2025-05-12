@@ -48,7 +48,7 @@
   - Track: “00:00 Neon Syndicate” (YouTube: https://www.youtube.com/watch?v=-8N1suW6aqw)  
 - **AI Usage:**  
   - All AI-generated text/images are tracked alongside their prompts in `AI_LOG.md`.  
-- **Version Control:** Git (this README.md)
+- **Version Control:** Git
 
 ## 📥 Installation & Running
 
@@ -69,11 +69,10 @@
 
 * **Sprites & Tiles:** Hand-drawn in Aseprite
 * **Music & SFX:** Licensed/attributed in `LICENSE.md`
-* **AI-assisted drafting:** See `AI_LOG.md`
 
 ## 📜 License
 
-This project is licensed under the MIT License. See `LICENSE.md` for details.
+This project is licensed under the MIT License. See `LICENSE` for details.
 
 > **Arisen** is an official entry for the **Pixel Game Jam 2025** on itch.io:
 > [https://itch.io/jam/-pixel-game-jam-2025](https://itch.io/jam/-pixel-game-jam-2025)
