@@ -60,9 +60,29 @@ theme = ExtResource("1_rwgxs")
 theme_type_variation = &"FlatButton"
 text = "SOUL DRAIN"
 
+[node name="ReanimateLevelUp" type="Button" parent="UI"]
+offset_left = 640.0
+offset_top = 64.0
+offset_right = 790.0
+offset_bottom = 117.0
+theme = ExtResource("1_rwgxs")
+theme_type_variation = &"FlatButton"
+text = "LEVEL UP"
+
+[node name="SoulDrainLevelUp" type="Button" parent="UI"]
+offset_left = 640.0
+offset_top = 128.0
+offset_right = 790.0
+offset_bottom = 181.0
+theme = ExtResource("1_rwgxs")
+theme_type_variation = &"FlatButton"
+text = "LEVEL UP"
+
 [node name="MainCharacter" type="Node2D" parent="."]
 script = ExtResource("1_nnsk1")
 
 [connection signal="pressed" from="UI/LevelUp" to="MainCharacter" method="_on_level_up_pressed"]
 [connection signal="pressed" from="UI/Reanimate" to="MainCharacter" method="_on_reanimate_pressed"]
 [connection signal="pressed" from="UI/SoulDrain" to="MainCharacter" method="_on_soul_drain_pressed"]
+[connection signal="pressed" from="UI/ReanimateLevelUp" to="MainCharacter" method="_on_reanimate_level_up_pressed"]
+[connection signal="pressed" from="UI/SoulDrainLevelUp" to="MainCharacter" method="_on_soul_drain_level_up_pressed"]

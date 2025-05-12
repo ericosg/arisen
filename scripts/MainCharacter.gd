@@ -1,8 +1,10 @@
 extends Node
 
-@onready var level_label      : Label = $"../UI/Level"
-@onready var max_de_label     : Label = $"../UI/MaxDarkEnergy"
-@onready var current_de_label : Label = $"../UI/DarkEnergy"
+@onready var level_label       : Label  = $"../UI/Level"
+@onready var max_de_label      : Label  = $"../UI/MaxDarkEnergy"
+@onready var current_de_label  : Label  = $"../UI/DarkEnergy"
+@onready var reanimate_button  : Button = $"../UI/Reanimate"
+@onready var soul_drain_button : Button = $"../UI/SoulDrain"
 
 var level        : int = 1
 var max_base_de  : int = 1
@@ -10,10 +12,9 @@ var max_bonus_de : int = 0
 var max_de       : int = 1
 var current_de   : int = 1
 
-var spells : Dictionary = {}
+var spells : Dictionary[int, Spell] = {}
 
 func _ready() -> void:
-	# instantiate by class_name
 	spells[Spell.SpellType.REANIMATE]  = SpellReanimate.new()
 	spells[Spell.SpellType.SOUL_DRAIN] = SpellSoulDrain.new()
 
@@ -41,9 +42,11 @@ func _update_de() -> void:
 	max_de      = max_base_de + max_bonus_de
 
 func _update_ui() -> void:
-	level_label.text      = "Level: %d" % level
-	current_de_label.text = "DE: %d" % current_de
-	max_de_label.text     = "MAX DE: %d" % max_de
+	level_label.text       = "Level: %d" % level
+	current_de_label.text  = "DE: %d" % current_de
+	max_de_label.text      = "MAX DE: %d" % max_de
+	reanimate_button.text  = "REANIMATE %d" % spells[Spell.SpellType.REANIMATE].level
+	soul_drain_button.text = "SOUL DRAIN %d" % spells[Spell.SpellType.SOUL_DRAIN].level
 
 func _show_not_enough_de_popup() -> void:
 	print_debug("Not enough DE!")
@@ -61,8 +64,10 @@ func _on_level_up_pressed() -> void:
 	current_de = max_de
 	_update_ui()
 
-func _on_reanimate_levelup_pressed() -> void:
+func _on_reanimate_level_up_pressed() -> void:
 	spells[Spell.SpellType.REANIMATE].level_up()
+	_update_ui()
 
-func _on_soul_drain_levelup_pressed() -> void:
+func _on_soul_drain_level_up_pressed() -> void:
 	spells[Spell.SpellType.SOUL_DRAIN].level_up()
+	_update_ui()
