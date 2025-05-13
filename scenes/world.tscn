@@ -52,18 +52,18 @@ theme_type_variation = &"HeaderLarge"
 text = "4"
 
 [node name="LevelUp" type="Button" parent="UI"]
-offset_left = 384.0
+offset_left = 576.0
 offset_top = 16.0
-offset_right = 604.0
+offset_right = 796.0
 offset_bottom = 56.0
 theme = ExtResource("1_rwgxs")
 theme_type_variation = &"FlatButton"
 text = "LEVEL UP"
 
 [node name="Reanimate" type="Button" parent="UI"]
-offset_left = 384.0
+offset_left = 576.0
 offset_top = 80.0
-offset_right = 644.0
+offset_right = 836.0
 offset_bottom = 120.0
 theme = ExtResource("1_rwgxs")
 theme_type_variation = &"FlatButton"
@@ -71,27 +71,27 @@ text = "REANIMATE
 "
 
 [node name="SoulDrain" type="Button" parent="UI"]
-offset_left = 384.0
+offset_left = 576.0
 offset_top = 144.0
-offset_right = 652.0
+offset_right = 844.0
 offset_bottom = 184.0
 theme = ExtResource("1_rwgxs")
 theme_type_variation = &"FlatButton"
 text = "SOUL DRAIN"
 
 [node name="ReanimateUpgrade" type="Button" parent="UI"]
-offset_left = 704.0
+offset_left = 1088.0
 offset_top = 80.0
-offset_right = 924.0
+offset_right = 1308.0
 offset_bottom = 120.0
 theme = ExtResource("1_rwgxs")
 theme_type_variation = &"FlatButton"
 text = "LEVEL UP"
 
 [node name="SoulDrainUpgrade" type="Button" parent="UI"]
-offset_left = 704.0
+offset_left = 1088.0
 offset_top = 144.0
-offset_right = 924.0
+offset_right = 1308.0
 offset_bottom = 184.0
 theme = ExtResource("1_rwgxs")
 theme_type_variation = &"FlatButton"
