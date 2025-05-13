@@ -2,9 +2,6 @@
 class_name Undead
 extends Creature
 
-class_name Undead
-extends Creature
-
 func _init(attack: int = 1, health: int = 1, speed: int = SpeedType.NORMAL, flying: bool = false, reach: bool = false, finality: int = 1):
 	super._init(attack, health, speed, flying, reach)
 	creature_type = Type.UNDEAD

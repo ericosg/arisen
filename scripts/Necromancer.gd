@@ -1,4 +1,4 @@
-# MainCharacter.gd
+# Necromancer.gd
 extends Node
 @onready var level_label              : Label  = $"../UI/Level"
 @onready var max_de_label             : Label  = $"../UI/MaxDarkEnergy"
