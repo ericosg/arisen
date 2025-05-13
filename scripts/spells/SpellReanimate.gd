@@ -2,97 +2,126 @@
 extends Spell
 class_name SpellReanimate
 
-enum ReanimateType {
+enum ReanimateSubType { # More specific than just "Type"
 	SKELETON = 0,
 	ZOMBIE = 1,
 	SPIRIT = 2
 }
 
-var current_type: int = ReanimateType.SKELETON
+var current_reanimate_subtype: ReanimateSubType = ReanimateSubType.SKELETON
 
-func _init():
-	mastery_cost_by_level = [2, 2, 3, 3, 5]
-	de_cost_by_level = [2, 2, 3, 3, 5]
+# Button to toggle reanimation type (assigned from Necromancer)
+var assigned_type_button: Button = null 
 
-func set_type(new_type: int) -> void:
-	current_type = new_type
-	
-	# Update costs based on type
-	match current_type:
-		ReanimateType.SKELETON:
-			# Base costs, no change
-			pass
-		ReanimateType.ZOMBIE:
-			# Zombies cost more
-			de_cost_by_level = [3, 3, 4, 4, 6]
-		ReanimateType.SPIRIT:
-			# Spirits cost most
-			de_cost_by_level = [4, 4, 5, 5, 7]
+func _init() -> void: # Set costs for Reanimate spell specifically
+	# Cost to upgrade Reanimate TO level: L2, L3, L4, L5
+	mastery_cost_per_level = [2, 3, 4, 5] # Cost to upgrade to L2, L3, L4, L5
+	# DE cost to cast Reanimate AT level: L1, L2, L3, L4, L5
+	de_cost_per_level = [2, 2, 3, 3, 4] # Base cost, might adjust with subtype
+	update_de_cost_based_on_subtype()
 
-func do_effect(caster, target = null) -> void:
-	print("🔮 Reanimate (Lv %d) effect!" % level)
-	
-	var game_manager = get_node_or_null("/root/GameManager")
-	if not game_manager:
-		push_error("GameManager not found")
-		return
-		
-	var battle_grid = game_manager.battle_grid
-	if not battle_grid:
-		push_error("BattleGrid not found")
-		return
-	
-	# If no target specified, use player's cursor position
-	var grid_pos: Vector2
-	if target is Vector2:
-		# Target is already a grid position
-		grid_pos = target
+func assign_type_button(button_node: Button):
+	if is_instance_valid(button_node):
+		assigned_type_button = button_node
+		assigned_type_button.connect("pressed", Callable(self, "_on_cycle_reanimate_subtype"))
+		update_type_button_text_if_assigned()
 	else:
-		# Convert mouse position to grid position
-		var mouse_pos = caster.get_viewport().get_mouse_position()
-		grid_pos = battle_grid.world_to_grid(mouse_pos)
+		push_warning("SpellReanimate: Attempted to assign an invalid type button.")
+
+
+func update_de_cost_based_on_subtype() -> void:
+	# Base DE costs are for Skeletons
+	var base_costs_at_level = [2, 2, 3, 3, 4] # L1 to L5
 	
-	var undead_type = ""
-	match current_type:
-		ReanimateType.SKELETON:
-			undead_type = "skeleton"
-		ReanimateType.ZOMBIE:
-			undead_type = "zombie"
-		ReanimateType.SPIRIT:
-			undead_type = "spirit"
+	# Adjust costs based on current level and subtype
+	var current_level_idx = clamp(level - 1, 0, base_costs_at_level.size() - 1)
+	var base_cost_for_current_level = base_costs_at_level[current_level_idx]
+
+	# Apply multipliers or additions for Zombie/Spirit
+	# This is a simple override; a more complex system could modify the de_cost_per_level array
+	var final_de_cost = base_cost_for_current_level
+	match current_reanimate_subtype:
+		ReanimateSubType.SKELETON:
+			pass # Uses base cost
+		ReanimateSubType.ZOMBIE:
+			final_de_cost += 1 # Zombies cost +1 DE example
+		ReanimateSubType.SPIRIT:
+			final_de_cost += 2 # Spirits cost +2 DE example
 	
-	game_manager.reanimate_at_position(grid_pos, undead_type, caster.level)
+	# This is a slight hack: get_de_cost() reads from array.
+	# For dynamic costs like this, get_de_cost() in this class should calculate it.
+	# Let's override get_de_cost here:
+	# No, easier to just adjust the de_cost_per_level array when subtype changes.
+	# For now, let Spell.get_de_cost use the array. The subtype will modify this array.
+	# This is tricky. Simpler: get_de_cost in SpellReanimate overrides and calculates.
 
-# Add a toggle button for the UI
-@onready var type_button: Button = null
+	# Override Spell.get_de_cost() for dynamic calculation:
+	# (See overridden get_de_cost function below)
+	pass # Actual cost calculation will be in the overridden get_de_cost()
 
-func _ready() -> void:
-	# Find the type toggle button if it exists
-	type_button = get_node_or_null("/root/MainScene/UI/ReanimateTypeButton")
-	if type_button:
-		type_button.connect("pressed", Callable(self, "on_type_button_pressed"))
-		update_type_button()
 
-func get_type_name() -> String:
-	match current_type:
-		ReanimateType.SKELETON:
-			return "Skeleton"
-		ReanimateType.ZOMBIE:
-			return "Zombie"
-		ReanimateType.SPIRIT:
-			return "Spirit"
-		_:
-			return "Unknown"
+func get_de_cost() -> int: # Override from Spell.gd
+	if level - 1 < de_cost_per_level.size() and level > 0:
+		var base_cost = de_cost_per_level[level-1] # Base cost for current level (Skeleton)
+		match current_reanimate_subtype:
+			ReanimateSubType.ZOMBIE:
+				return base_cost + 1 # Example: Zombies always cost 1 more than Skeleton at same spell level
+			ReanimateSubType.SPIRIT:
+				return base_cost + 2 # Example: Spirits always cost 2 more
+			_: # SKELETON or default
+				return base_cost
+	return 999 # Should not happen
 
-func cycle_type() -> void:
-	current_type = (current_type + 1) % 3
-	set_type(current_type)
 
-func on_type_button_pressed() -> void:
-	cycle_type()
-	update_type_button()
+func set_reanimate_subtype(new_subtype: ReanimateSubType) -> void:
+	current_reanimate_subtype = new_subtype
+	update_de_cost_based_on_subtype() # Recalculate costs or update UI if needed
+	update_type_button_text_if_assigned()
+	print("Reanimate subtype changed to: ", get_subtype_name())
 
-func update_type_button() -> void:
-	var type_button = get_node_or_null("/root/MainScene/UI/ReanimateTypeButton")
-	if type_button:
-		type_button.text = "Type: %s" % get_type_name()
+func _on_cycle_reanimate_subtype() -> void:
+	current_reanimate_subtype = (current_reanimate_subtype + 1) % 3 # Cycle through 0, 1, 2
+	set_reanimate_subtype(current_reanimate_subtype)
+	# The Necromancer's UI update will reflect the new cost if it calls get_de_cost()
+
+func update_type_button_text_if_assigned() -> void:
+	if is_instance_valid(assigned_type_button):
+		assigned_type_button.text = "Type: %s" % get_subtype_name()
+
+func get_subtype_name() -> String:
+	match current_reanimate_subtype:
+		ReanimateSubType.SKELETON: return "Skeleton"
+		ReanimateSubType.ZOMBIE: return "Zombie"
+		ReanimateSubType.SPIRIT: return "Spirit"
+		_: return "Unknown"
+
+
+# target_data here is the dead_creature_info dictionary from GameManager/Necromancer
+func do_effect(caster: Node, target_data = null) -> void:
+	if target_data == null or not target_data is Dictionary:
+		push_error("Reanimate spell: Invalid or missing target data for reanimation.")
+		# Potentially refund DE to caster if spell fails early
+		if caster.has_method("_update_ui"): caster._update_ui() # Refresh UI if DE was consumed
+		return
+
+	var game_manager = $GameManager
+	if not game_manager or not game_manager.has_method("reanimate_creature_from_data"):
+		push_error("Reanimate spell: GameManager not found or method missing.")
+		return
+
+	var necromancer_level = 1
+	if caster.has_meta("level"): # Assuming Necromancer node has 'level' property
+		necromancer_level = caster.level
+	elif caster.get("level") != null : # Common way to store level
+		necromancer_level = caster.get("level")
+
+
+	print("Casting Reanimate (L%d, Type: %s) on data: %s" % [level, get_subtype_name(), target_data])
+	
+	game_manager.reanimate_creature_from_data(
+		target_data,                  # The dead_creature_info dictionary
+		get_subtype_name().to_lower(),# "skeleton", "zombie", or "spirit"
+		necromancer_level
+	)
+	# DE was already deducted by Necromancer before calling do_effect.
+	# Necromancer's _update_ui will be called after this.

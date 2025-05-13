@@ -10,7 +10,7 @@ enum ReanimateType {
 
 # Use this function in your SpellReanimate's do_effect method
 static func perform_reanimation(caster, target = null, type: int = ReanimateType.SKELETON) -> void:
-	var game_manager = caster.get_node("/root/GameManager")
+	var game_manager = caster.get_node("GameManager")
 	if not game_manager:
 		push_error("GameManager not found")
 		return

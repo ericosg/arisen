@@ -2,30 +2,33 @@
 class_name Alien
 extends Creature
 
-func _init(attack: int = 1, health: int = 1, speed: int = SpeedType.NORMAL, flying: bool = false, reach: bool = false):
-	super._init(attack, health, speed, flying, reach)
-	creature_type = Type.ALIEN
+func _init(ap: int = 1, hp: int = 1, spd: SpeedType = SpeedType.NORMAL, flying: bool = false, reach: bool = false):
+	super._init(ap, hp, spd, flying, reach)
+	faction = CreatureFaction.ALIEN
 
 func die() -> void:
-	# Alien death logic - could emit a signal that an alien has died
-	var game_manager = get_node("/root/GameManager")
-	if game_manager:
-		game_manager.alien_died(self)
-	
-	queue_free()
+	# Alien-specific death effects
+	print("Alien %s at %s,%s has been neutralized!" % [self.name, lane, row])
 
-# Create the alien-specific types as static factory methods
-static func create_fireant() -> Alien:
-	return Alien.new(1, 1, SpeedType.FAST)
+	# Signal to GameManager
+	var game_manager = $GameManager
+	if game_manager and game_manager.has_method("handle_creature_death"):
+		game_manager.handle_creature_death(self)
+		
+	super.die() # This will call queue_free()
 
-static func create_wasp() -> Alien:
-	return Alien.new(2, 1, SpeedType.NORMAL, true)  # Flying
+# --- Factory Methods ---
+static func create_fireant() -> Alien: # High speed
+	return Alien.new(2, 2, SpeedType.FAST)
+
+static func create_wasp() -> Alien: # Flyers
+	return Alien.new(3, 1, SpeedType.NORMAL, true)
 
 static func create_spider() -> Alien:
-	return Alien.new(1, 2, SpeedType.NORMAL)
+	return Alien.new(2, 3, SpeedType.NORMAL)
 
 static func create_scorpion() -> Alien:
-	return Alien.new(3, 2, SpeedType.NORMAL)
+	return Alien.new(4, 4, SpeedType.NORMAL) # Tougher normal speed
 
-static func create_beetle() -> Alien:
-	return Alien.new(2, 4, SpeedType.SLOW)
+static func create_beetle() -> Alien: # Slow speed
+	return Alien.new(3, 6, SpeedType.SLOW)

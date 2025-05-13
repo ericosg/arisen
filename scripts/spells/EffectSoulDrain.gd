@@ -4,7 +4,7 @@ extends Node
 
 # Use this function in your SpellSoulDrain's do_effect method
 static func perform_soul_drain(caster, target = null, drain_level: int = 1) -> void:
-	var game_manager = caster.get_node("/root/GameManager")
+	var game_manager = caster.get_node("GameManager")
 	if not game_manager:
 		push_error("GameManager not found")
 		return

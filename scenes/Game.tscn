@@ -1,7 +1,8 @@
-[gd_scene load_steps=8 format=3 uid="uid://be13dj8aot2a1"]
+[gd_scene load_steps=9 format=3 uid="uid://be13dj8aot2a1"]
 
 [ext_resource type="Script" uid="uid://cf08m1qkbi2j6" path="res://scripts/Game.gd" id="1_kiw3p"]
 [ext_resource type="Script" uid="uid://b7wuc3lebbhcu" path="res://scripts/Necromancer.gd" id="2_400sg"]
+[ext_resource type="Script" uid="uid://b8nohsrbqqgad" path="res://scripts/GameManager.gd" id="2_g4kob"]
 [ext_resource type="Script" uid="uid://cp7weqwxc8i8v" path="res://scripts/BattleGrid.gd" id="3_g4kob"]
 [ext_resource type="Texture2D" uid="uid://bsynm4hmyov58" path="res://assets/images/bg.png" id="4_qy1jj"]
 [ext_resource type="Texture2D" uid="uid://cpd11cj1a3247" path="res://assets/images/spells.png" id="5_3xj3m"]
@@ -10,6 +11,9 @@
 
 [node name="Game" type="Node2D"]
 script = ExtResource("1_kiw3p")
+
+[node name="GameManager" type="Node" parent="."]
+script = ExtResource("2_g4kob")
 
 [node name="Necromancer" type="Node2D" parent="."]
 script = ExtResource("2_400sg")
@@ -95,6 +99,22 @@ theme_type_variation = &"FlatButton"
 text = "REANIMATE
 "
 
+[node name="ReanimateType" type="Button" parent="UI"]
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -388.0
+offset_top = -20.0
+offset_bottom = 20.0
+grow_horizontal = 0
+grow_vertical = 2
+theme = ExtResource("7_2rd6h")
+theme_type_variation = &"FlatButton"
+text = "REANIMATE TYPE
+"
+
 [node name="SoulDrain" type="Button" parent="UI"]
 offset_left = 576.0
 offset_top = 144.0
@@ -122,7 +142,7 @@ theme = ExtResource("7_2rd6h")
 theme_type_variation = &"FlatButton"
 text = "LEVEL UP"
 
-[node name="GameStart" type="Button" parent="UI"]
+[node name="GameStartButton" type="Button" parent="UI"]
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
@@ -139,9 +159,35 @@ theme_type_variation = &"FlatButton"
 theme_override_font_sizes/font_size = 64
 text = "START"
 
+[node name="GameOver" type="Panel" parent="UI"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -156.0
+offset_top = -128.0
+offset_right = 156.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="Status" type="Label" parent="UI/GameOver"]
+layout_mode = 0
+offset_left = 116.0
+offset_top = 48.0
+offset_right = 196.0
+offset_bottom = 71.0
+
+[node name="Restart" type="Button" parent="UI/GameOver"]
+layout_mode = 0
+offset_left = 116.0
+offset_top = 96.0
+offset_right = 196.0
+offset_bottom = 112.0
+text = "RESTART"
+
 [connection signal="pressed" from="UI/LevelUp" to="Necromancer" method="_on_level_up_pressed"]
 [connection signal="pressed" from="UI/Reanimate" to="Necromancer" method="_on_reanimate_pressed"]
 [connection signal="pressed" from="UI/SoulDrain" to="Necromancer" method="_on_soul_drain_pressed"]
 [connection signal="pressed" from="UI/ReanimateUpgrade" to="Necromancer" method="_on_reanimate_upgrade_pressed"]
 [connection signal="pressed" from="UI/SoulDrainUpgrade" to="Necromancer" method="_on_soul_drain_upgrade_pressed"]
-[connection signal="pressed" from="UI/GameStart" to="." method="_on_game_start_pressed"]
