@@ -15,9 +15,9 @@
   - Each turn contains multiple waves of combat; brief interludes let you cast spells (replenish Dark Energy, reanimate fallen, empower undead).  
 - **Necromancy core**  
   - **Reanimate** any organic corpse into undead:  
-    - **Skeletons** (1 / 1)  
-    - **Zombies** (1 / Y)  
-    - **Spirits** (X / 1, flying)  
+	- **Skeletons** (1 / 1)  
+	- **Zombies** (1 / Y)  
+	- **Spirits** (X / 1, flying)  
   - “Finality counters” govern how many times an undead can return.  
 - **Alien threat**  
   - Hive-mind insectoids (ground & flying) swarm medieval Earth.  
@@ -25,9 +25,9 @@
 - **Progression & mastery**  
   - Level up your MC to increase base/max Dark Energy (DE).  
   - Skill trees specialize in:  
-    - Mass armies (cheap skeleton swarms)  
-    - Durable tanks (zombie heal & damage boosts)  
-    - Aerial strike forces (spirit upgrades, flying/Reach interactions)
+	- Mass armies (cheap skeleton swarms)  
+	- Durable tanks (zombie heal & damage boosts)  
+	- Aerial strike forces (spirit upgrades, flying/Reach interactions)
 
 ## 🚀 Features
 
@@ -76,4 +76,3 @@ This project is licensed under the MIT License. See `LICENSE` for details.
 
 > **Arisen** is an official entry for the **Pixel Game Jam 2025** on itch.io:
 > [https://itch.io/jam/-pixel-game-jam-2025](https://itch.io/jam/-pixel-game-jam-2025)
-
