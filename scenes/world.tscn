@@ -1,17 +1,33 @@
-[gd_scene load_steps=4 format=3 uid="uid://be13dj8aot2a1"]
+[gd_scene load_steps=6 format=3 uid="uid://be13dj8aot2a1"]
 
 [ext_resource type="Texture2D" uid="uid://bsynm4hmyov58" path="res://assets/images/bg.png" id="1_4wyf3"]
 [ext_resource type="Script" uid="uid://b7wuc3lebbhcu" path="res://scripts/MainCharacter.gd" id="1_nnsk1"]
 [ext_resource type="Theme" uid="uid://bcbm7eax7il1n" path="res://resources/DefaultTheme.tres" id="1_rwgxs"]
+[ext_resource type="Texture2D" uid="uid://cpd11cj1a3247" path="res://assets/images/spells.png" id="2_71j4m"]
+[ext_resource type="Texture2D" uid="uid://df3e7j2y7q6dj" path="res://assets/images/help.png" id="3_qfnet"]
 
 [node name="World" type="Node2D"]
 
 [node name="BG" type="CanvasLayer" parent="."]
 
-[node name="TextureRect" type="TextureRect" parent="BG"]
+[node name="BackGround" type="TextureRect" parent="BG"]
 offset_right = 40.0
 offset_bottom = 40.0
 texture = ExtResource("1_4wyf3")
+
+[node name="Spells" type="TextureRect" parent="BG"]
+offset_left = -1728.0
+offset_top = -24.0
+offset_right = -192.0
+offset_bottom = 1000.0
+texture = ExtResource("2_71j4m")
+
+[node name="Help" type="TextureRect" parent="BG"]
+offset_left = 1688.0
+offset_top = -48.0
+offset_right = 3224.0
+offset_bottom = 976.0
+texture = ExtResource("3_qfnet")
 
 [node name="UI" type="CanvasLayer" parent="."]
 
