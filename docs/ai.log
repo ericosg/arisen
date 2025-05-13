@@ -1,0 +1,16 @@
+Create image size 1152x648 pixels for my godot 2d game. this image will be used as the background to my game, and needs to have placeholders for my hud and overall UI.
+
+here is some context, the game's name is "arisen" and is a retro-style pixel art 2d top down turn based strategy game where you control a necromancer (not visible in the game) that is able to cast spells during the turns. the game resembles two player TCG games, where the opponents army is at the top and your army is at the bottom but instead of cards, we have creatures. i will add the graphics to the creatures later, but we need to have space to add them and the image you will generate will have plenty of space in the center.
+
+the hud at the bottom needs to have space for the player's spells, at any time the player can have 4x2 spells in the bottom left corner and in the bottom right corner an empty box that will be filled with text that is activated on button hover, so that the user can tell what each button and icon does.
+
+at the top, the UI shows the player:
+remaining humans on the planet (similar to health), current wave, current turn (one turn has many waves), the dark energy (similar to mana) which is shown as current/max. you don't need to show these but space is needed for them.
+
+on the middle left of the screen, a list of the upcoming wave, current wave and previous wave is shown (you don't need to show these but space is needed for them).
+
+the theme needs to be classic, almost monochrome, with a desaturated feel, since it's related to dark magic and retro-style games. everything is pixel art, including the font. so make all buttons, frames, boxes etc use a pixel art classic arcade game style.
+
+the background needs to be a deserted city (cityscape in the distance) and since some units are flying, it's important to have the sky and horizon visible. 
+
+be creative!
