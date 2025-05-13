@@ -42,6 +42,15 @@ theme = ExtResource("1_rwgxs")
 theme_type_variation = &"HeaderLarge"
 text = "3"
 
+[node name="MasteryPoints" type="Label" parent="UI"]
+offset_left = 16.0
+offset_top = 208.0
+offset_right = 56.0
+offset_bottom = 237.0
+theme = ExtResource("1_rwgxs")
+theme_type_variation = &"HeaderLarge"
+text = "4"
+
 [node name="LevelUp" type="Button" parent="UI"]
 offset_left = 384.0
 offset_top = 16.0
@@ -70,7 +79,7 @@ theme = ExtResource("1_rwgxs")
 theme_type_variation = &"FlatButton"
 text = "SOUL DRAIN"
 
-[node name="ReanimateLevelUp" type="Button" parent="UI"]
+[node name="ReanimateUpgrade" type="Button" parent="UI"]
 offset_left = 704.0
 offset_top = 80.0
 offset_right = 924.0
@@ -79,7 +88,7 @@ theme = ExtResource("1_rwgxs")
 theme_type_variation = &"FlatButton"
 text = "LEVEL UP"
 
-[node name="SoulDrainLevelUp" type="Button" parent="UI"]
+[node name="SoulDrainUpgrade" type="Button" parent="UI"]
 offset_left = 704.0
 offset_top = 144.0
 offset_right = 924.0
@@ -94,5 +103,5 @@ script = ExtResource("1_nnsk1")
 [connection signal="pressed" from="UI/LevelUp" to="MainCharacter" method="_on_level_up_pressed"]
 [connection signal="pressed" from="UI/Reanimate" to="MainCharacter" method="_on_reanimate_pressed"]
 [connection signal="pressed" from="UI/SoulDrain" to="MainCharacter" method="_on_soul_drain_pressed"]
-[connection signal="pressed" from="UI/ReanimateLevelUp" to="MainCharacter" method="_on_reanimate_level_up_pressed"]
-[connection signal="pressed" from="UI/SoulDrainLevelUp" to="MainCharacter" method="_on_soul_drain_level_up_pressed"]
+[connection signal="pressed" from="UI/ReanimateUpgrade" to="MainCharacter" method="_on_reanimate_upgrade_pressed"]
+[connection signal="pressed" from="UI/SoulDrainUpgrade" to="MainCharacter" method="_on_soul_drain_upgrade_pressed"]

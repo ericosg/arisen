@@ -1,9 +1,9 @@
 # MainCharacter.gd
 extends Node
-
 @onready var level_label       : Label  = $"../UI/Level"
 @onready var max_de_label      : Label  = $"../UI/MaxDarkEnergy"
 @onready var current_de_label  : Label  = $"../UI/DarkEnergy"
+@onready var mastery_label     : Label  = $"../UI/MasteryPoints"
 @onready var reanimate_button  : Button = $"../UI/Reanimate"
 @onready var soul_drain_button : Button = $"../UI/SoulDrain"
 
@@ -12,13 +12,12 @@ var max_base_de  : int = 1
 var max_bonus_de : int = 0
 var max_de       : int = 1
 var current_de   : int = 1
-
+var mastery      : int = 1
 var spells : Dictionary[int, Spell] = {}
 
 func _ready() -> void:
 	spells[Spell.SpellType.REANIMATE]  = SpellReanimate.new()
 	spells[Spell.SpellType.SOUL_DRAIN] = SpellSoulDrain.new()
-
 	_update_de()
 	current_de = max_de
 	_update_ui()
@@ -28,12 +27,10 @@ func cast_spell(spell_type: int, target = null) -> void:
 	if spell == null:
 		push_error("No spell of type %d" % spell_type)
 		return
-
 	var cost = spell.get_de_cost()
 	if current_de < cost:
 		_show_not_enough_de_popup()
 		return
-
 	current_de -= cost
 	_update_ui()
 	spell.do_effect(self, target)
@@ -46,11 +43,29 @@ func _update_ui() -> void:
 	level_label.text       = "Level: %d" % level
 	current_de_label.text  = "DE: %d" % current_de
 	max_de_label.text      = "MAX DE: %d" % max_de
+	mastery_label.text     = "Mastery: %d" % mastery
 	reanimate_button.text  = "REANIMATE %d" % spells[Spell.SpellType.REANIMATE].level
 	soul_drain_button.text = "SOUL DRAIN %d" % spells[Spell.SpellType.SOUL_DRAIN].level
+	
+	var reanimate_cost = spells[Spell.SpellType.REANIMATE].get_mastery_cost()
+	var soul_drain_cost = spells[Spell.SpellType.SOUL_DRAIN].get_mastery_cost()
+	
+	var reanimate_upgrade_button = $"../UI/ReanimateUpgrade"
+	var soul_drain_upgrade_button = $"../UI/SoulDrainUpgrade"
+	
+	if reanimate_upgrade_button:
+		reanimate_upgrade_button.text = "Upgrade (%d MP)" % reanimate_cost
+		reanimate_upgrade_button.disabled = mastery < reanimate_cost
+	
+	if soul_drain_upgrade_button:
+		soul_drain_upgrade_button.text = "Upgrade (%d MP)" % soul_drain_cost
+		soul_drain_upgrade_button.disabled = mastery < soul_drain_cost
 
 func _show_not_enough_de_popup() -> void:
 	print_debug("Not enough DE!")
+
+func _show_not_enough_mastery_popup() -> void:
+	print_debug("Not enough Mastery Points!")
 
 # UI hooks
 func _on_reanimate_pressed() -> void:
@@ -61,14 +76,28 @@ func _on_soul_drain_pressed() -> void:
 
 func _on_level_up_pressed() -> void:
 	level += 1
+	mastery += 1
 	_update_de()
 	current_de = max_de
 	_update_ui()
 
-func _on_reanimate_level_up_pressed() -> void:
-	spells[Spell.SpellType.REANIMATE].level_up()
-	_update_ui()
+func _on_reanimate_upgrade_pressed() -> void:
+	_attempt_spell_level_up(Spell.SpellType.REANIMATE)
 
-func _on_soul_drain_level_up_pressed() -> void:
-	spells[Spell.SpellType.SOUL_DRAIN].level_up()
+func _on_soul_drain_upgrade_pressed() -> void:
+	_attempt_spell_level_up(Spell.SpellType.SOUL_DRAIN)
+
+func _attempt_spell_level_up(spell_type: int) -> void:
+	var spell = spells.get(spell_type)
+	if spell == null:
+		push_error("No spell of type %d" % spell_type)
+		return
+	
+	var cost = spell.get_mastery_cost()
+	if mastery < cost:
+		_show_not_enough_mastery_popup()
+		return
+	
+	mastery -= cost
+	spell.level_up()
 	_update_ui()
