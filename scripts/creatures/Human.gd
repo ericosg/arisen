@@ -2,7 +2,8 @@
 class_name Human
 extends Creature
 
-func _init(attack: int = 1, health: int = 1, speed: int = SpeedType.NORMAL, flying: bool = false, reach: bool = false).(attack, health, speed, flying, reach) -> void:
+func _init(attack: int = 1, health: int = 1, speed: int = SpeedType.NORMAL, flying: bool = false, reach: bool = false):
+	super._init(attack, health, speed, flying, reach)
 	creature_type = Type.HUMAN
 
 func die() -> void:

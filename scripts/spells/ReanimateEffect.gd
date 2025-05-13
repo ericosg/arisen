@@ -39,4 +39,4 @@ static func perform_reanimation(caster, target = null, type: int = ReanimateType
 		ReanimateType.SPIRIT:
 			undead_type = "spirit"
 	
-	game_manager.reanimate_at_position(position, undead_type)
+	game_manager.reanimate_at_position(position, undead_type, caster.level)
