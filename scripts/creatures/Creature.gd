@@ -79,3 +79,15 @@ func get_speed_name() -> String:
 
 func is_dead() -> bool:
 	return current_health <= 0
+
+# Get movement distance based on speed
+func get_move_distance() -> int:
+	match speed_type:
+		SpeedType.SLOW:
+			return 1
+		SpeedType.NORMAL:
+			return 2
+		SpeedType.FAST:
+			return 3
+		_:
+			return 0

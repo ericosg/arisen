@@ -2,6 +2,8 @@
 class_name Undead
 extends Creature
 
+var original_creature_type: int = Type.HUMAN  # Store what it was before undead
+
 func _init(attack: int = 1, health: int = 1, speed: int = SpeedType.NORMAL, flying: bool = false, reach: bool = false, finality: int = 1):
 	super._init(attack, health, speed, flying, reach)
 	creature_type = Type.UNDEAD
@@ -17,22 +19,30 @@ func die() -> void:
 			game_manager.undead_permanently_died(self)
 		queue_free()
 	else:
-		# Emit a signal that this undead needs to be replaced/respawned
+		# Send to GameManager for respawning
 		var game_manager = get_node("/root/GameManager")
 		if game_manager:
 			game_manager.undead_died_with_finality(self)
 
 # Static methods to create undead from various creatures
 static func create_from_creature(creature: Creature, undead_type: String, necromancer_level: int) -> Undead:
+	var new_undead: Undead
+	
 	match undead_type:
 		"skeleton":
-			return create_skeleton(necromancer_level)
+			new_undead = create_skeleton(necromancer_level)
 		"zombie":
-			return create_zombie(creature.max_health, necromancer_level)
+			new_undead = create_zombie(creature.max_health, necromancer_level)
 		"spirit":
-			return create_spirit(creature.attack_power, necromancer_level)
+			new_undead = create_spirit(creature.attack_power, necromancer_level)
 		_:
-			return create_skeleton(necromancer_level)  # Default to skeleton
+			new_undead = create_skeleton(necromancer_level)  # Default to skeleton
+	
+	# Copy properties from the original creature
+	new_undead.original_creature_type = creature.creature_type
+	new_undead.has_reach = creature.has_reach
+	
+	return new_undead
 
 # Create the undead-specific types as static factory methods
 static func create_skeleton(necromancer_level: int = 1) -> Undead:

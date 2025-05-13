@@ -75,11 +75,31 @@ func remove_creature(grid_pos: Vector2) -> void:
 	
 	grid_cells[grid_pos.x][grid_pos.y] = null
 
-func get_creatures_at_position(grid_pos: Vector2):
+func get_creature_at_position(grid_pos: Vector2):
 	if grid_pos.x < 0 or grid_pos.x >= GRID_WIDTH or grid_pos.y < 0 or grid_pos.y >= GRID_HEIGHT:
 		return null
 	
 	return grid_cells[grid_pos.x][grid_pos.y]
+
+func is_cell_empty(grid_pos: Vector2) -> bool:
+	if grid_pos.x < 0 or grid_pos.x >= GRID_WIDTH or grid_pos.y < 0 or grid_pos.y >= GRID_HEIGHT:
+		return false  # Out of bounds cells are considered occupied
+	
+	return grid_cells[grid_pos.x][grid_pos.y] == null
+
+func find_nearest_empty_cell(from_pos: Vector2) -> Vector2:
+	# Search in expanding squares around the position
+	for distance in range(1, max(GRID_WIDTH, GRID_HEIGHT)):
+		for dx in range(-distance, distance+1):
+			for dy in range(-distance, distance+1):
+				# Only check cells on the perimeter of the square
+				if abs(dx) == distance or abs(dy) == distance:
+					var check_pos = Vector2(from_pos.x + dx, from_pos.y + dy)
+					if is_cell_empty(check_pos):
+						return check_pos
+	
+	# No empty cell found (should be rare)
+	return Vector2(-1, -1)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:

@@ -20,6 +20,11 @@ var spells : Dictionary[int, Spell] = {}
 func _ready() -> void:
 	spells[Spell.SpellType.REANIMATE]  = SpellReanimate.new()
 	spells[Spell.SpellType.SOUL_DRAIN] = SpellSoulDrain.new()
+	
+	var game_manager = get_node_or_null("/root/GameManager")
+	if game_manager:
+		game_manager.connect("turn_started", _on_turn_started)
+	
 	_update_de()
 	current_de = max_de
 	_update_ui()
@@ -36,6 +41,17 @@ func cast_spell(spell_type: int, target = null) -> void:
 	current_de -= cost
 	_update_ui()
 	spell.do_effect(self, target)
+
+func update_de() -> void:
+	# Called when a wave is completed
+	# Can provide partial DE restoration between waves
+	current_de = min(current_de + 1, max_de)
+	_update_ui()
+
+func _on_turn_started(turn_number: int) -> void:
+	# Fully replenish DE at the start of each turn
+	current_de = max_de
+	_update_ui()
 
 func _update_de() -> void:
 	max_base_de = int(round(sqrt(2 * level)))
