@@ -1,6 +1,5 @@
-# SpellSoulDrain.gd
+# SpellSoulDrain.gd - Updated version
 extends Spell
-
 class_name SpellSoulDrain
 
 func _init():
@@ -9,3 +8,6 @@ func _init():
 
 func do_effect(caster, target = null) -> void:
 	print("💀 Soul Drain (Lv %d) effect!" % level)
+	
+	# Use the helper class to perform the actual soul drain
+	SoulDrainEffect.perform_soul_drain(caster, target, level)
