@@ -1,9 +1,11 @@
+# SpellSoulDrain.gd
 extends Spell
 
 class_name SpellSoulDrain
 
 func _init():
-	cost_by_level = [2, 3, 4, 5]
+	mastery_cost_by_level = [1, 3, 5, 10]
+	de_cost_by_level = [1, 3, 5, 10]
 
 func do_effect(caster, target = null) -> void:
 	print("💀 Soul Drain (Lv %d) effect!" % level)

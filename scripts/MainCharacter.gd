@@ -1,3 +1,4 @@
+# MainCharacter.gd
 extends Node
 
 @onready var level_label       : Label  = $"../UI/Level"
@@ -28,7 +29,7 @@ func cast_spell(spell_type: int, target = null) -> void:
 		push_error("No spell of type %d" % spell_type)
 		return
 
-	var cost = spell.get_cost()
+	var cost = spell.get_de_cost()
 	if current_de < cost:
 		_show_not_enough_de_popup()
 		return
