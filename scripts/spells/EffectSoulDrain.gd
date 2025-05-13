@@ -1,7 +1,5 @@
-# SoulDrainEffect.gd
-# This is a utility class to handle the actual soul drain logic
-# for your existing SpellSoulDrain class
-class_name SoulDrainEffect
+# EffectSoulDrain.gd
+class_name EffectSoulDrain
 extends Node
 
 # Use this function in your SpellSoulDrain's do_effect method

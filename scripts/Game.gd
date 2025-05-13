@@ -1,4 +1,4 @@
-# World.gd
+# Game.gd
 extends Node
 
 @onready var game_start: Button = $UI/GameStart

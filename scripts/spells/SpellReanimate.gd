@@ -73,10 +73,26 @@ func _ready() -> void:
 		type_button.connect("pressed", Callable(self, "on_type_button_pressed"))
 		update_type_button()
 
+func get_type_name() -> String:
+	match current_type:
+		ReanimateType.SKELETON:
+			return "Skeleton"
+		ReanimateType.ZOMBIE:
+			return "Zombie"
+		ReanimateType.SPIRIT:
+			return "Spirit"
+		_:
+			return "Unknown"
+
+func cycle_type() -> void:
+	current_type = (current_type + 1) % 3
+	set_type(current_type)
+
 func on_type_button_pressed() -> void:
 	cycle_type()
 	update_type_button()
 
 func update_type_button() -> void:
+	var type_button = get_node_or_null("/root/MainScene/UI/ReanimateTypeButton")
 	if type_button:
 		type_button.text = "Type: %s" % get_type_name()

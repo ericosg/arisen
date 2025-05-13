@@ -1,7 +1,5 @@
-# ReanimateEffect.gd
-# This is a utility class to handle the actual reanimation logic 
-# for your existing SpellReanimate class
-class_name ReanimateEffect
+# EffectReanimate.gd
+class_name EffectReanimate
 extends Node
 
 enum ReanimateType {

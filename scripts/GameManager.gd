@@ -24,17 +24,18 @@ var undead : Array[Undead] = []
 @onready var battle_grid = $BattleGrid
 
 func _ready() -> void:
+	print("arise!")
 	wave_timer = Timer.new()
 	wave_timer.one_shot = true
 	wave_timer.wait_time = 5.0 # 5 seconds between waves
 	wave_timer.connect("timeout", _on_wave_timer_timeout)
 	add_child(wave_timer)
 	
-	# Connect signals from/to MainCharacter if needed
-	var main_character = get_node_or_null("/root/MainScene/MainCharacter")
-	if main_character:
-		connect("wave_completed", main_character.update_de)
-		connect("request_reanimate", main_character.cast_spell.bind(Spell.SpellType.REANIMATE))
+	# Connect signals from/to Necromancer if needed
+	var necromancer = get_node_or_null("/root/MainScene/Necromancer")
+	if necromancer:
+		connect("wave_completed", necromancer.update_de)
+		connect("request_reanimate", necromancer.cast_spell.bind(Spell.SpellType.REANIMATE))
 
 func start_game() -> void:
 	current_wave = 0
@@ -53,7 +54,7 @@ func _on_wave_timer_timeout() -> void:
 func end_wave() -> void:
 	emit_signal("wave_ended", current_wave)
 	emit_signal("wave_completed")
-	# DE replenishment is now handled by the MainCharacter
+	# DE replenishment is now handled by the Necromancer
 
 func check_wave_completion() -> void:
 	if aliens.size() == 0 and is_wave_active:
@@ -157,7 +158,7 @@ func undead_permanently_died(undead: Undead) -> void:
 	undead.erase(undead)
 	emit_signal("creature_died", undead, Vector2(undead.lane, undead.row))
 
-func creature_died(creature) -> void:
+func handle_creature_death(creature) -> void:
 	if battle_grid:
 		var grid_pos = Vector2(creature.lane, creature.row)
 		battle_grid.remove_creature(grid_pos)

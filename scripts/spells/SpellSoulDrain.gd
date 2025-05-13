@@ -10,4 +10,4 @@ func do_effect(caster, target = null) -> void:
 	print("💀 Soul Drain (Lv %d) effect!" % level)
 	
 	# Use the helper class to perform the actual soul drain
-	SoulDrainEffect.perform_soul_drain(caster, target, level)
+	EffectSoulDrain.perform_soul_drain(caster, target, level)
