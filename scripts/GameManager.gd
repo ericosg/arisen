@@ -170,19 +170,19 @@ func _set_game_over(reason: String, msg: String):
 
 func _spawn_new_human_contingent():
 	var humans_to_spawn: Array[Dictionary] = [
-		{"type": "Human_Swordsman", "config": {"creature_name": "Swordsman", "max_health": 15, "attack_power": 4, "speed_type": Creature.SpeedType.NORMAL, "sprite_texture_path": "res://icon.svg"}}, # Replace with actual path
-		{"type": "Human_Archer", "config": {"creature_name": "Archer", "max_health": 10, "attack_power": 3, "speed_type": Creature.SpeedType.NORMAL, "has_reach": true, "sprite_texture_path": "res://icon.svg"}}, # Replace
-		{"type": "Human_Civilian", "config": {"creature_name": "Civilian", "max_health": 5, "attack_power": 0, "speed_type": Creature.SpeedType.SLOW, "sprite_texture_path": "res://icon.svg"}}, # Replace
+		{"type": "Human_Swordsman", "config": {"creature_name": "Swordsman", "max_health": 15, "attack_power": 4, "speed_type": Creature.SpeedType.NORMAL, "sprite_texture_path": "res://icon.svg"}}, 
+		{"type": "Human_Archer", "config": {"creature_name": "Archer", "max_health": 10, "attack_power": 3, "speed_type": Creature.SpeedType.NORMAL, "has_reach": true, "sprite_texture_path": "res://icon.svg"}}, 
+		{"type": "Human_Civilian", "config": {"creature_name": "Civilian", "max_health": 5, "attack_power": 0, "speed_type": Creature.SpeedType.SLOW, "sprite_texture_path": "res://icon.svg"}}, 
 	]
 	_auto_place_units(humans_to_spawn, Creature.Faction.HUMAN)
 
 func _spawn_new_alien_wave():
 	var aliens_to_spawn: Array[Dictionary] = [
-		{"type": "Alien_FireAnt", "config": {"creature_name": "FireAnt", "max_health": 8, "attack_power": 3, "speed_type": Creature.SpeedType.FAST, "sprite_texture_path": "res://icon.svg"}}, # Replace
-		{"type": "Alien_Wasp", "config": {"creature_name": "Wasp", "max_health": 6, "attack_power": 2, "speed_type": Creature.SpeedType.FAST, "is_flying": true, "sprite_texture_path": "res://icon.svg"}}, # Replace
+		{"type": "Alien_FireAnt", "config": {"creature_name": "FireAnt", "max_health": 8, "attack_power": 3, "speed_type": Creature.SpeedType.FAST, "sprite_texture_path": "res://icon.svg"}}, 
+		{"type": "Alien_Wasp", "config": {"creature_name": "Wasp", "max_health": 6, "attack_power": 2, "speed_type": Creature.SpeedType.FAST, "is_flying": true, "sprite_texture_path": "res://icon.svg"}}, 
 	]
 	if current_wave_in_turn == 2: 
-		aliens_to_spawn.append({"type": "Alien_Beetle", "config": {"creature_name": "Beetle", "max_health": 20, "attack_power": 2, "speed_type": Creature.SpeedType.SLOW, "sprite_texture_path": "res://icon.svg"}}) # Replace
+		aliens_to_spawn.append({"type": "Alien_Beetle", "config": {"creature_name": "Beetle", "max_health": 20, "attack_power": 2, "speed_type": Creature.SpeedType.SLOW, "sprite_texture_path": "res://icon.svg"}})
 	_auto_place_units(aliens_to_spawn, Creature.Faction.ALIEN)
 
 func _auto_place_units(units_to_spawn_data: Array[Dictionary], faction: Creature.Faction):
@@ -204,10 +204,9 @@ func _auto_place_units(units_to_spawn_data: Array[Dictionary], faction: Creature
 		if not placed: creature_node.queue_free()
 
 func _prepare_creature_node_base() -> Node2D:
-	"""Helper to create a Node2D and add a Sprite2D child named 'Sprite'."""
 	var creature_base_node = Node2D.new()
 	var sprite_node = Sprite2D.new()
-	sprite_node.name = "Sprite" # Crucial for Creature.gd's @onready var
+	sprite_node.name = "Sprite" 
 	creature_base_node.add_child(sprite_node)
 	return creature_base_node
 
@@ -215,7 +214,7 @@ func spawn_reanimated_creature(config_from_spell: Dictionary) -> Creature:
 	var script_path = config_from_spell.get("creature_class_script_path", "")
 	if script_path == "": printerr("GM: No script_path for reanimation."); return null
 
-	var creature_node = _prepare_creature_node_base() # Get Node2D with Sprite child
+	var creature_node = _prepare_creature_node_base() 
 	var script_res = load(script_path)
 	if not script_res: printerr("GM: Failed to load script %s" % script_path); creature_node.queue_free(); return null
 	
@@ -228,12 +227,12 @@ func spawn_reanimated_creature(config_from_spell: Dictionary) -> Creature:
 	
 	var final_config = config_from_spell.duplicate(true)
 	var undead_type_name = config_from_spell.get("creature_name", "Undead").to_lower()
-	# Ensure sprite_texture_path is set for reanimated creatures
+
 	if not final_config.has("sprite_texture_path"):
-		if undead_type_name.contains("skeleton"): final_config["sprite_texture_path"] = "res://icon.svg" # Replace
-		elif undead_type_name.contains("zombie"): final_config["sprite_texture_path"] = "res://icon.svg" # Replace
-		elif undead_type_name.contains("spirit"): final_config["sprite_texture_path"] = "res://icon.svg" # Replace
-		else: final_config["sprite_texture_path"] = "res://icon.svg" # Default undead sprite (Replace)
+		if undead_type_name.contains("skeleton"): final_config["sprite_texture_path"] = "res://icon.svg" 
+		elif undead_type_name.contains("zombie"): final_config["sprite_texture_path"] = "res://icon.svg" 
+		elif undead_type_name.contains("spirit"): final_config["sprite_texture_path"] = "res://icon.svg" 
+		else: final_config["sprite_texture_path"] = "res://icon.svg" 
 
 	actual_creature.initialize_creature(final_config)
 	units_container_node.add_child(actual_creature)
@@ -245,7 +244,7 @@ func _create_creature_node_from_config(type_key: String, config: Dictionary, fac
 	var script_path = CREATURE_SCRIPT_PATHS.get(type_key, "")
 	if script_path == "": printerr("GM: No script for type %s" % type_key); return null
 
-	var creature_node = _prepare_creature_node_base() # Get Node2D with Sprite child
+	var creature_node = _prepare_creature_node_base() 
 	var script_res = load(script_path)
 	if not script_res: printerr("GM: Failed to load script %s for %s" % [script_path, type_key]); creature_node.queue_free(); return null
 	
@@ -258,15 +257,17 @@ func _create_creature_node_from_config(type_key: String, config: Dictionary, fac
 	
 	var final_cfg = config.duplicate(true)
 	final_cfg["faction"] = fact_override 
-	# Ensure sprite_texture_path is in the config, if not add a default
+	
 	if not final_cfg.has("sprite_texture_path"):
-		final_cfg["sprite_texture_path"] = "res://icon.svg" # Default if not specified in human/alien spawn configs
+		final_cfg["sprite_texture_path"] = "res://icon.svg" 
 
 	actual_creature.initialize_creature(final_cfg)
 	units_container_node.add_child(actual_creature) 
 	
+	# FIX: Connect 'died' signal directly without .bind() for this case
 	if not actual_creature.died.is_connected(_on_creature_died): 
-		actual_creature.died.connect(_on_creature_died.bind(actual_creature))
+		actual_creature.died.connect(_on_creature_died) # Corrected connection
+	
 	return actual_creature
 
 func _add_creature_to_active_lists(creature: Creature):
@@ -282,18 +283,22 @@ func _add_creature_to_active_lists(creature: Creature):
 				player_undead_roster.erase(creature)
 				emit_signal("undead_roster_changed", player_undead_roster)
 
-func _on_creature_died(creature_died: Creature):
-	if not is_instance_valid(creature_died): return
-	var corpse_payload = creature_died.get_data_for_corpse_creation()
-	corpse_payload["grid_pos_on_death"] = creature_died.grid_pos
+func _on_creature_died(creature_that_died: Creature): # Expects 1 argument
+	if not is_instance_valid(creature_that_died):
+		return
+	
+	var corpse_payload = creature_that_died.get_data_for_corpse_creation()
+	corpse_payload["grid_pos_on_death"] = creature_that_died.grid_pos
 	corpse_payload["turn_of_death"] = current_turn
-	if creature_died.faction == Creature.Faction.HUMAN or creature_died.faction == Creature.Faction.ALIEN:
+	
+	if creature_that_died.faction == Creature.Faction.HUMAN or creature_that_died.faction == Creature.Faction.ALIEN:
 		corpse_payload["finality_counter"] = INITIAL_FINALITY_FOR_NEW_CORPSES
 	else: 
 		corpse_payload["finality_counter"] = corpse_payload.get("current_finality_counter_on_death", 0)
+
 	var new_corpse = CorpseData.new(corpse_payload)
 	available_corpses.append(new_corpse); emit_signal("corpse_added", new_corpse)
-	_remove_creature_from_game(creature_died)
+	_remove_creature_from_game(creature_that_died)
 
 func _remove_creature_from_game(creature_to_remove: Creature):
 	if not is_instance_valid(creature_to_remove): return
