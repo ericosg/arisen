@@ -42,11 +42,11 @@ script = ExtResource("2_g4kob")
 script = ExtResource("2_400sg")
 
 [node name="BattleGridNode" type="Node2D" parent="."]
-position = Vector2(576, 256)
+position = Vector2(512, 256)
 script = ExtResource("3_g4kob")
 
 [node name="UnitsContainerNode" type="Node2D" parent="."]
-position = Vector2(576, 256)
+position = Vector2(512, 256)
 
 [node name="UI" type="CanvasLayer" parent="."]
 
