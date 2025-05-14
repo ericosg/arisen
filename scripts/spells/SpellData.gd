@@ -1,4 +1,4 @@
-# ./scripts/spells/Spell.gd
+# ./scripts/spells/SpellData.gd
 extends Resource # Spells can be Resources holding data and logic
 class_name SpellData
 

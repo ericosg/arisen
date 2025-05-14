@@ -1,4 +1,4 @@
-# ./scripts/spells/SpellSoulDrain.gd
+# ./scripts/spells/SpellSoulDrainData.gd
 extends SpellData
 class_name SpellSoulDrainData
 
