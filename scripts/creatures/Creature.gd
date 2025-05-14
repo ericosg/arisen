@@ -39,17 +39,18 @@ var game_manager: GameManager # Needs to be assigned
 var battle_grid: BattleGrid   # Needs to be assigned
 
 # Visual representation for the creature
-# IMPORTANT: You MUST add a Sprite2D node named "Sprite" as a child of any Node2D
-#            that has this Creature.gd script (or a script extending it) attached.
-@onready var sprite: Sprite2D = $Sprite # Assumes a child Sprite2D named "Sprite"
+# GameManager._prepare_creature_node_base() adds a Sprite2D child named "Sprite".
+# This @onready var is for convenience in methods called *after* _ready().
+# For initialize_creature, we'll get it directly.
+@onready var sprite_node_ref: Sprite2D = $Sprite 
 
 
 func _ready():
 	_set_current_health(min(current_health, max_health))
 	_update_reanimation_payload_from_current_stats()
 
-	if not is_instance_valid(sprite):
-		printerr("Creature '%s': Child Sprite2D node named 'Sprite' not found! Visuals will be missing." % creature_name)
+	if not is_instance_valid(sprite_node_ref): # Check if the @onready var resolved
+		printerr("Creature '%s': Child Sprite2D node named 'Sprite' not found by @onready var! This might indicate an issue if other methods rely on sprite_node_ref." % creature_name)
 
 
 func _update_reanimation_payload_from_current_stats():
@@ -78,12 +79,10 @@ func _set_current_health(value: int):
 func _set_grid_pos(new_pos: Vector2i):
 	if grid_pos != new_pos:
 		grid_pos = new_pos
-		# Update visual position when grid_pos changes
-		if is_instance_valid(battle_grid): # Make sure battle_grid reference is set
+		if is_instance_valid(battle_grid): 
 			self.position = battle_grid.get_world_position_for_grid_cell_center(grid_pos)
-		elif new_pos != Vector2i(-1,-1): # Only warn if trying to set a valid position without grid ref
+		elif new_pos != Vector2i(-1,-1): 
 			printerr("Creature '%s': BattleGrid reference not set. Cannot update visual position for grid_pos %s." % [creature_name, str(new_pos)])
-		
 		emit_signal("grid_position_changed", self, new_pos)
 
 
@@ -98,7 +97,7 @@ func initialize_creature(config: Dictionary):
 	is_flying = config.get("is_flying", false)
 	has_reach = config.get("has_reach", false)
 
-	_update_reanimation_payload_from_current_stats() # Update payload after initialization
+	_update_reanimation_payload_from_current_stats()
 
 	if config.has("finality_counter"):
 		finality_counter = config.get("finality_counter", 0)
@@ -106,19 +105,20 @@ func initialize_creature(config: Dictionary):
 	is_alive = true
 	is_targetable = true
 
-	# Load sprite texture
-	if is_instance_valid(sprite):
-		var texture_path = config.get("sprite_texture_path", "res://icon.svg") # Default to Godot icon
+	# Get the Sprite2D child node directly here.
+	# GameManager's _prepare_creature_node_base ensures this child exists.
+	var current_sprite_node: Sprite2D = get_node_or_null("Sprite") as Sprite2D
+
+	if is_instance_valid(current_sprite_node):
+		var texture_path = config.get("sprite_texture_path", "res://icon.svg") 
 		var loaded_texture = load(texture_path)
 		if loaded_texture is Texture2D:
-			sprite.texture = loaded_texture
-			# Optional: Adjust scale or offset if sprites vary in size
-			# sprite.scale = Vector2(0.5, 0.5) # Example scale
-			# sprite.offset = Vector2(0, -16) # Example offset to align with cell bottom
+			current_sprite_node.texture = loaded_texture
 		else:
 			printerr("Creature '%s': Failed to load texture at path: %s" % [creature_name, texture_path])
-	elif creature_name != "Creature": # Don't spam for default base if sprite is missing
-		printerr("Creature '%s': Sprite node missing, cannot set texture." % creature_name)
+	elif creature_name != "Creature": 
+		# This error should ideally not happen if GameManager._prepare_creature_node_base() works.
+		printerr("Creature '%s': Sprite node (child named 'Sprite') missing in initialize_creature, cannot set texture." % creature_name)
 
 
 func take_damage(amount: int):
@@ -130,8 +130,7 @@ func die():
 	is_alive = false
 	is_targetable = false
 	emit_signal("died", self)
-	# Optional: Play death animation, then set visible = false
-	# if is_instance_valid(sprite): sprite.modulate = Color(1,1,1,0.5) # Example: fade out
+	# if is_instance_valid(sprite_node_ref): sprite_node_ref.modulate = Color(1,1,1,0.5) 
 
 func can_attack_target(target_creature: Creature) -> bool:
 	if not is_instance_valid(target_creature) or not target_creature.is_alive or not target_creature.is_targetable: return false
