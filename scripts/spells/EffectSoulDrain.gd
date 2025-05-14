@@ -1,4 +1,4 @@
-# EffectSoulDrain.gd
+# ./scripts/spells/EffectSoulDrain.gd
 class_name EffectSoulDrain
 extends Node
 

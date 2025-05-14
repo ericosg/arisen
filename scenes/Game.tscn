@@ -12,14 +12,16 @@
 [node name="Game" type="Node2D"]
 script = ExtResource("1_kiw3p")
 
-[node name="GameManager" type="Node" parent="."]
+[node name="GameManagerNode" type="Node" parent="."]
 script = ExtResource("2_g4kob")
 
-[node name="Necromancer" type="Node2D" parent="."]
+[node name="NecromancerNode" type="Node" parent="."]
 script = ExtResource("2_400sg")
 
-[node name="BattleGrid" type="Node2D" parent="."]
+[node name="BattleGridNode" type="Node2D" parent="."]
 script = ExtResource("3_g4kob")
+
+[node name="UnitsContainerNode" type="Node2D" parent="."]
 
 [node name="BG" type="CanvasLayer" parent="."]
 
@@ -185,9 +187,3 @@ offset_top = 96.0
 offset_right = 196.0
 offset_bottom = 112.0
 text = "RESTART"
-
-[connection signal="pressed" from="UI/LevelUp" to="Necromancer" method="_on_level_up_pressed"]
-[connection signal="pressed" from="UI/Reanimate" to="Necromancer" method="_on_reanimate_pressed"]
-[connection signal="pressed" from="UI/SoulDrain" to="Necromancer" method="_on_soul_drain_pressed"]
-[connection signal="pressed" from="UI/ReanimateUpgrade" to="Necromancer" method="_on_reanimate_upgrade_pressed"]
-[connection signal="pressed" from="UI/SoulDrainUpgrade" to="Necromancer" method="_on_soul_drain_upgrade_pressed"]

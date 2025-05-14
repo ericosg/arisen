@@ -3,3 +3,4 @@
 /android/
 *.zip
 /build
+scripts/merged_code.txt

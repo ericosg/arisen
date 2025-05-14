@@ -1,4 +1,4 @@
-# EffectReanimate.gd
+# ./scripts/spells/EffectReanimate.gd
 class_name EffectReanimate
 extends Node
 

@@ -1,4 +1,4 @@
-# ./scripts/Corpse.gd
+# ./scripts/CorpseData.gd
 extends Resource
 class_name CorpseData
 
