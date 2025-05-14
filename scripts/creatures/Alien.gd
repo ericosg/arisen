@@ -1,34 +1,37 @@
-# Alien.gd - Base class for alien creatures
-class_name Alien
+# ./scripts/creatures/Alien.gd
 extends Creature
+class_name Alien
 
-func _init(ap: int = 1, hp: int = 1, spd: SpeedType = SpeedType.NORMAL, flying: bool = false, reach: bool = false):
-	super._init(ap, hp, spd, flying, reach)
-	faction = CreatureFaction.ALIEN
+# Aliens are a specific faction of creatures.
+# Their unique types (FireAnt, Wasp, Spider, Scorpion, Beetle)
+# and corresponding stats/abilities are defined by the configuration
+# dictionary passed to initialize_creature() when they are created.
 
-func die() -> void:
-	# Alien-specific death effects
-	print("Alien %s at %s,%s has been neutralized!" % [self.name, lane, row])
+func _init():
+	# Alien creatures always belong to the ALIEN faction.
+	# Set this by default for any node this script is attached to.
+	faction = Faction.ALIEN
+	# creature_name = "Alien" # Will be set by config typically
 
-	# Signal to GameManager
-	var game_manager = $GameManager
-	if game_manager and game_manager.has_method("handle_creature_death"):
-		game_manager.handle_creature_death(self)
-		
-	super.die() # This will call queue_free()
+func initialize_creature(config: Dictionary):
+	# Call the parent's initialize_creature method first.
+	super.initialize_creature(config)
 
-# --- Factory Methods ---
-static func create_fireant() -> Alien: # High speed
-	return Alien.new(2, 2, SpeedType.FAST)
+	# Ensure the faction is correctly set to ALIEN, overriding any config just in case.
+	self.faction = Faction.ALIEN
 
-static func create_wasp() -> Alien: # Flyers
-	return Alien.new(3, 1, SpeedType.NORMAL, true)
+	# Specific Alien types (FireAnt, Wasp, etc.) will have their attributes
+	# (max_health, attack_power, speed_type, is_flying for Wasps, etc.)
+	# set by the 'config' dictionary.
+	# This base Alien.gd doesn't need to know those specifics, only that they come from config.
 
-static func create_spider() -> Alien:
-	return Alien.new(2, 3, SpeedType.NORMAL)
+	# print_debug("Alien creature '%s' initialized." % creature_name)
 
-static func create_scorpion() -> Alien:
-	return Alien.new(4, 4, SpeedType.NORMAL) # Tougher normal speed
+# If all Aliens shared a specific ability (e.g., "Hive Mind Bonus" under certain conditions),
+# that logic could be implemented here.
+# For now, individual alien types are distinguished by their configuration.
 
-static func create_beetle() -> Alien: # Slow speed
-	return Alien.new(3, 6, SpeedType.SLOW)
+# The die() method from Creature.gd is inherited.
+# When an Alien dies, Creature.gd's die() method will emit the "died" signal.
+# The GameManager will then create a CorpseData object. This corpse will be given
+# an initial finality_counter, allowing it to be reanimated into an Undead.

@@ -1,127 +1,184 @@
-# SpellReanimate.gd
-extends Spell
-class_name SpellReanimate
+# ./scripts/spells/SpellReanimate.gd
+extends SpellData
+class_name SpellReanimateData
 
-enum ReanimateSubType { # More specific than just "Type"
-	SKELETON = 0,
-	ZOMBIE = 1,
-	SPIRIT = 2
-}
+# Defines the Reanimate spell. Allows the Necromancer to raise Undead from corpses.
+# The type of Undead created depends on the spell's level.
 
-var current_reanimate_subtype: ReanimateSubType = ReanimateSubType.SKELETON
+# --- UNDEAD TYPE MAPPING ---
+# This could be more complex, e.g., allowing player choice if multiple types are unlocked.
+# For now, spell_level maps directly:
+const UNDEAD_TYPE_SKELETON = "Skeleton"
+const UNDEAD_TYPE_ZOMBIE = "Zombie"
+const UNDEAD_TYPE_SPIRIT = "Spirit"
 
-# Button to toggle reanimation type (assigned from Necromancer)
-var assigned_type_button: Button = null 
 
-func _init() -> void: # Set costs for Reanimate spell specifically
-	# Cost to upgrade Reanimate TO level: L2, L3, L4, L5
-	mastery_cost_per_level = [2, 3, 4, 5] # Cost to upgrade to L2, L3, L4, L5
-	# DE cost to cast Reanimate AT level: L1, L2, L3, L4, L5
-	de_cost_per_level = [2, 2, 3, 3, 4] # Base cost, might adjust with subtype
-	update_de_cost_based_on_subtype()
+func _init(config: Dictionary = {}):
+	super._init(config) # Call parent constructor
 
-func assign_type_button(button_node: Button):
-	if is_instance_valid(button_node):
-		assigned_type_button = button_node
-		assigned_type_button.connect("pressed", Callable(self, "_on_cycle_reanimate_subtype"))
-		update_type_button_text_if_assigned()
+	# Default values specific to Reanimate
+	spell_name = config.get("spell_name", "Reanimate")
+	spell_description = config.get("spell_description", "Raises a fallen creature as an Undead servant. Type depends on spell level.")
+	de_cost = config.get("de_cost", 10) # Base DE cost, can be adjusted by level
+	required_mc_level = config.get("required_mc_level", 1)
+	spell_level = config.get("spell_level", 1)
+	max_spell_level = config.get("max_spell_level", 3) # e.g., Lvl 1:Skel, Lvl 2:Zom, Lvl 3:Spirit
+	target_type = TargetType.CORPSE
+
+
+# Override can_cast for Reanimate-specific checks
+func can_cast(caster_node, current_de: int, target_data = null) -> bool:
+	if not super.can_cast(caster_node, current_de): # Check base conditions (DE, MC level)
+		return false
+
+	if not target_data is CorpseData:
+		printerr("Reanimate: Invalid target. Expected CorpseData.")
+		return false
+
+	var corpse: CorpseData = target_data
+	if not corpse.can_be_reanimated():
+		# print_debug("Reanimate: Target corpse (Finality: %d) cannot be reanimated." % corpse.finality_counter)
+		return false
+	
+	# Check if the chosen Undead type for the current spell level is valid (placeholder for future)
+	var undead_type_to_create = get_undead_type_for_current_level()
+	if undead_type_to_create == "":
+		printerr("Reanimate: No valid Undead type defined for spell level %d." % spell_level)
+		return false
+
+	return true
+
+# Override cast to handle the Reanimate spell's execution
+func cast(caster_node, target_data = null) -> bool:
+	# Ensure Necromancer and GameManager references are set (should be done by Necromancer node)
+	if not is_instance_valid(caster) or not is_instance_valid(game_manager):
+		printerr("Reanimate: Caster or GameManager reference not set in spell.")
+		return false
+	
+	if not can_cast(caster_node, caster.current_de, target_data):
+		return false
+
+	# Apply DE cost
+	caster.spend_de(de_cost)
+
+	# Apply the reanimation effect
+	var success = apply_effect(caster_node, target_data)
+	
+	if success:
+		# print_debug("Reanimate cast successfully on corpse of '%s'." % [target_data.original_creature_name])
+		pass # GameManager will handle UI updates for roster etc.
 	else:
-		push_warning("SpellReanimate: Attempted to assign an invalid type button.")
+		# print_debug("Reanimate failed to apply effect.")
+		# Potentially refund DE if apply_effect can fail after cost is paid (though unlikely here)
+		pass
+		
+	return success
 
+# Override apply_effect for the core reanimation logic
+func apply_effect(caster_node, target_data = null) -> bool:
+	var corpse: CorpseData = target_data
+	if not is_instance_valid(corpse): # Should have been checked by can_cast
+		return false
 
-func update_de_cost_based_on_subtype() -> void:
-	# Base DE costs are for Skeletons
-	var base_costs_at_level = [2, 2, 3, 3, 4] # L1 to L5
+	var undead_type_to_create: String = get_undead_type_for_current_level()
+	var new_undead_finality: int = corpse.finality_counter - 1 
+	# This new_undead_finality is for the Undead *instance*. The corpse's finality was already >0.
+
+	if new_undead_finality < 0:
+		printerr("Reanimate Error: Calculated new Undead finality is less than 0. This shouldn't happen if corpse.can_be_reanimated() was true.")
+		return false # Should not occur if can_be_reanimated (which checks finality > 0) was true
+
+	var creature_config = {} # Dictionary to configure the new Undead
+
+	match undead_type_to_create:
+		UNDEAD_TYPE_SKELETON:
+			creature_config = {
+				"creature_class_script_path": "res://scripts/creatures/Skeleton.gd", # Path to Skeleton script
+				"creature_name": "Skeleton",
+				"max_health": 1,
+				"attack_power": 1,
+				"speed_type": Creature.SpeedType.NORMAL,
+				"is_flying": false,
+				"has_reach": false,
+				"finality_counter": new_undead_finality
+			}
+		UNDEAD_TYPE_ZOMBIE:
+			creature_config = {
+				"creature_class_script_path": "res://scripts/creatures/Zombie.gd", # Path to Zombie script
+				"creature_name": "Zombie (%s)" % corpse.original_creature_name, # e.g. "Zombie (Human Spearman)"
+				"max_health": corpse.original_max_health,
+				"attack_power": 1,
+				"speed_type": Creature.SpeedType.SLOW,
+				"is_flying": false,
+				"has_reach": corpse.original_had_reach, # Zombies can inherit reach
+				"finality_counter": new_undead_finality
+			}
+		UNDEAD_TYPE_SPIRIT:
+			creature_config = {
+				"creature_class_script_path": "res://scripts/creatures/Spirit.gd", # Path to Spirit script
+				"creature_name": "Spirit of %s" % corpse.original_creature_name,
+				"max_health": 1,
+				"attack_power": corpse.original_attack_power, # Spirits inherit original attack
+				"speed_type": Creature.SpeedType.FAST,
+				"is_flying": true,
+				"has_reach": false,
+				"finality_counter": new_undead_finality
+			}
+		_:
+			printerr("Reanimate: Unknown Undead type '%s' for spell level %d." % [undead_type_to_create, spell_level])
+			return false
 	
-	# Adjust costs based on current level and subtype
-	var current_level_idx = clamp(level - 1, 0, base_costs_at_level.size() - 1)
-	var base_cost_for_current_level = base_costs_at_level[current_level_idx]
+	# Delegate the actual instantiation and roster management to GameManager
+	# GameManager will create a Node2D, attach the script, call initialize_creature, and add to roster.
+	var new_undead_node = game_manager.spawn_reanimated_creature(creature_config)
 
-	# Apply multipliers or additions for Zombie/Spirit
-	# This is a simple override; a more complex system could modify the de_cost_per_level array
-	var final_de_cost = base_cost_for_current_level
-	match current_reanimate_subtype:
-		ReanimateSubType.SKELETON:
-			pass # Uses base cost
-		ReanimateSubType.ZOMBIE:
-			final_de_cost += 1 # Zombies cost +1 DE example
-		ReanimateSubType.SPIRIT:
-			final_de_cost += 2 # Spirits cost +2 DE example
-	
-	# This is a slight hack: get_de_cost() reads from array.
-	# For dynamic costs like this, get_de_cost() in this class should calculate it.
-	# Let's override get_de_cost here:
-	# No, easier to just adjust the de_cost_per_level array when subtype changes.
-	# For now, let Spell.get_de_cost use the array. The subtype will modify this array.
-	# This is tricky. Simpler: get_de_cost in SpellReanimate overrides and calculates.
-
-	# Override Spell.get_de_cost() for dynamic calculation:
-	# (See overridden get_de_cost function below)
-	pass # Actual cost calculation will be in the overridden get_de_cost()
+	if is_instance_valid(new_undead_node):
+		game_manager.consume_corpse(corpse) # Tell GameManager to remove the corpse from lists
+		return true
+	else:
+		printerr("Reanimate: GameManager failed to spawn the reanimated creature.")
+		return false
 
 
-func get_de_cost() -> int: # Override from Spell.gd
-	if level - 1 < de_cost_per_level.size() and level > 0:
-		var base_cost = de_cost_per_level[level-1] # Base cost for current level (Skeleton)
-		match current_reanimate_subtype:
-			ReanimateSubType.ZOMBIE:
-				return base_cost + 1 # Example: Zombies always cost 1 more than Skeleton at same spell level
-			ReanimateSubType.SPIRIT:
-				return base_cost + 2 # Example: Spirits always cost 2 more
-			_: # SKELETON or default
-				return base_cost
-	return 999 # Should not happen
+func get_undead_type_for_current_level() -> String:
+	match spell_level:
+		1:
+			return UNDEAD_TYPE_SKELETON
+		2:
+			return UNDEAD_TYPE_ZOMBIE
+		3: # And potentially higher levels if max_spell_level allows
+			return UNDEAD_TYPE_SPIRIT
+		_:
+			return "" # No type defined for this level
 
+# Override to provide valid targets for Reanimate
+func get_valid_targets(caster_node, all_creatures: Array, all_corpses: Array) -> Array:
+	var valid_targets: Array[CorpseData] = []
+	if not is_instance_valid(game_manager):
+		printerr("Reanimate/get_valid_targets: GameManager reference not set.")
+		return valid_targets
 
-func set_reanimate_subtype(new_subtype: ReanimateSubType) -> void:
-	current_reanimate_subtype = new_subtype
-	update_de_cost_based_on_subtype() # Recalculate costs or update UI if needed
-	update_type_button_text_if_assigned()
-	print("Reanimate subtype changed to: ", get_subtype_name())
+	for corpse_resource in game_manager.get_available_corpses(): # Assumes GameManager has this method
+		if corpse_resource is CorpseData and corpse_resource.can_be_reanimated():
+			valid_targets.append(corpse_resource)
+	return valid_targets
 
-func _on_cycle_reanimate_subtype() -> void:
-	current_reanimate_subtype = (current_reanimate_subtype + 1) % 3 # Cycle through 0, 1, 2
-	set_reanimate_subtype(current_reanimate_subtype)
-	# The Necromancer's UI update will reflect the new cost if it calls get_de_cost()
+# Override to show level-specific spell description
+func get_level_specific_description() -> String:
+	var undead_type = get_undead_type_for_current_level()
+	if undead_type == "":
+		return "Raises a fallen creature as an Undead. (Invalid spell level for type selection)"
+	return "Raises a %s from a corpse.\nConsumes 1 Finality from the corpse." % undead_type.to_lower()
 
-func update_type_button_text_if_assigned() -> void:
-	if is_instance_valid(assigned_type_button):
-		assigned_type_button.text = "Type: %s" % get_subtype_name()
-
-func get_subtype_name() -> String:
-	match current_reanimate_subtype:
-		ReanimateSubType.SKELETON: return "Skeleton"
-		ReanimateSubType.ZOMBIE: return "Zombie"
-		ReanimateSubType.SPIRIT: return "Spirit"
-		_: return "Unknown"
-
-
-# target_data here is the dead_creature_info dictionary from GameManager/Necromancer
-func do_effect(caster: Node, target_data = null) -> void:
-	if target_data == null or not target_data is Dictionary:
-		push_error("Reanimate spell: Invalid or missing target data for reanimation.")
-		# Potentially refund DE to caster if spell fails early
-		if caster.has_method("_update_ui"): caster._update_ui() # Refresh UI if DE was consumed
-		return
-
-	var game_manager = $GameManager
-	if not game_manager or not game_manager.has_method("reanimate_creature_from_data"):
-		push_error("Reanimate spell: GameManager not found or method missing.")
-		return
-
-	var necromancer_level = 1
-	if caster.has_meta("level"): # Assuming Necromancer node has 'level' property
-		necromancer_level = caster.level
-	elif caster.get("level") != null : # Common way to store level
-		necromancer_level = caster.get("level")
-
-
-	print("Casting Reanimate (L%d, Type: %s) on data: %s" % [level, get_subtype_name(), target_data])
-	
-	game_manager.reanimate_creature_from_data(
-		target_data,                  # The dead_creature_info dictionary
-		get_subtype_name().to_lower(),# "skeleton", "zombie", or "spirit"
-		necromancer_level
-	)
-	# DE was already deducted by Necromancer before calling do_effect.
-	# Necromancer's _update_ui will be called after this.
+# Override to handle spell upgrades
+func upgrade_spell():
+	if super.upgrade_spell(): # Call base to increment spell_level
+		# Adjust DE cost or other properties based on new level, if desired
+		match spell_level:
+			1: de_cost = 10 
+			2: de_cost = 12 # Example: Zombies might cost slightly more
+			3: de_cost = 15 # Example: Spirits might cost more
+			# Add cases for higher levels if max_spell_level is increased
+		# print_debug("Reanimate upgraded. New DE cost: %d. Now summons: %s" % [de_cost, get_undead_type_for_current_level()])
+		return true
+	return false

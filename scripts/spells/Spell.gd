@@ -1,46 +1,97 @@
-# Spell.gd
-extends Node
-class_name Spell
+# ./scripts/spells/Spell.gd
+extends Resource # Spells can be Resources holding data and logic
+class_name SpellData
 
-enum SpellType {
-	REANIMATE,
-	SOUL_DRAIN,
-	# Add more spell types here
-}
+# This is a base class for spell data and logic.
+# Specific spells will inherit from this.
 
-@export var level: int = 1
-@export var max_level: int = 5 # Example max spell level
+@export var spell_name: String = "Generic Spell"
+@export var spell_description: String = "Casts a generic spell effect."
+@export var de_cost: int = 5
+@export var required_mc_level: int = 1 # Minimum Necromancer level to use this spell
+@export var spell_level: int = 1 # Current level of this spell instance (can be upgraded)
+@export var max_spell_level: int = 5 # Max level this spell can be upgraded to
 
-# Costs should be defined per level
-# Example: mastery_cost_per_level[0] is cost for level 1, mastery_cost_per_level[1] for level 2, etc.
-@export var mastery_cost_per_level: Array[int] = [1, 2, 3, 4, 5] # Cost to upgrade TO this level from previous
-@export var de_cost_per_level: Array[int] = [2, 3, 4, 5, 6]    # DE cost to cast AT this level
+# Target type enum - might be useful for UI or validation
+enum TargetType { NONE, SELF, ALLY_CREATURE, ENEMY_CREATURE, CORPSE, GRID_CELL, ALL_ALLIES, ALL_ENEMIES }
+@export var target_type: TargetType = TargetType.NONE
 
-func get_mastery_cost() -> int: # Cost to upgrade to (level + 1)
-	if level >= max_level:
-		return -1 # Cannot upgrade further (or a very high number)
-	if level < mastery_cost_per_level.size(): # مستوى 0 للترقية إلى 1، مستوى 1 إلى 2، إلخ.
-		return mastery_cost_per_level[level] # Cost to reach (current_level + 1)
-	return -1 # Default if not defined (shouldn't happen with proper array setup)
+# --- References (to be set when the spell is prepared or cast) ---
+# These are not part of the Resource's saved state but are needed at runtime.
+var caster # The Necromancer instance casting the spell
+var game_manager # Reference to the GameManager for accessing game state
+var battle_grid # Reference to the BattleGrid if needed for targeting
 
-func get_de_cost() -> int: # Cost to cast at current level
-	if level - 1 < de_cost_per_level.size() and level > 0:
-		return de_cost_per_level[level-1]
-	return 999 # Default if not defined
+func _init(config: Dictionary = {}):
+	if not config.is_empty():
+		spell_name = config.get("spell_name", spell_name)
+		spell_description = config.get("spell_description", spell_description)
+		de_cost = config.get("de_cost", de_cost)
+		required_mc_level = config.get("required_mc_level", required_mc_level)
+		spell_level = config.get("spell_level", spell_level)
+		max_spell_level = config.get("max_spell_level", max_spell_level)
+		target_type = config.get("target_type", target_type)
 
-func level_up() -> bool:
-	if level < max_level:
-		level += 1
-		print("%s leveled up to %d" % [self.get_class(), level])
-		# Potentially emit a signal or update spell effects based on new level
-		return true
-	print("%s is already at max level %d" % [self.get_class(), max_level])
+# Called by the Necromancer to check if the spell can be cast.
+# Specific spells might override this to add more conditions.
+func can_cast(caster_node, current_de: int) -> bool:
+	if not is_instance_valid(caster_node):
+		printerr("Spell: Caster node is invalid.")
+		return false
+	# Assuming Necromancer has a 'level' property
+	# if caster_node.has_method("get_level") and caster_node.get_level() < required_mc_level:
+	# printerr("Spell '%s' requires MC level %d. Caster level: %d" % [spell_name, required_mc_level, caster_node.get_level()])
+	# return false
+	
+	if current_de < de_cost:
+		# print_debug("Spell '%s' cannot be cast. Not enough DE. Has: %d, Needs: %d" % [spell_name, current_de, de_cost])
+		return false
+	
+	return true
+
+# Placeholder for the main spell casting logic.
+# Specific spells MUST override this method.
+# `target_data` can be anything: a Creature node, a CorpseData resource, a Vector2i for grid cell, etc.
+func cast(caster_node, target_data = null) -> bool:
+	printerr("Spell '%s' cast() method not implemented!" % spell_name)
+	# Basic structure:
+	# 1. Perform final checks.
+	# 2. Apply DE cost to caster.
+	# 3. Execute spell effect.
+	# 4. Return true if successful, false otherwise.
 	return false
 
-# Base effect function to be overridden by specific spells
-# caster: The Node that cast the spell (e.g., Necromancer instance)
-# target_data: Can be anything the spell needs - Vector2 for position, a Creature instance, etc.
-# For Reanimate, target_data will be the dead_creature_info dictionary.
-# For Soul Drain, target_data might be a Creature instance or null for AoE.
-func do_effect(caster: Node, target_data = null) -> void:
-	push_error("do_effect() not implemented in spell: %s" % get_class())
+# Placeholder for spell effect logic. Often called by cast().
+# Specific spells will implement their unique effects here.
+func apply_effect(caster_node, target_data = null):
+	printerr("Spell '%s' apply_effect() method not implemented!" % spell_name)
+	pass
+
+# Placeholder for getting targeting information or validating targets.
+# Specific spells can override this.
+func get_valid_targets(caster_node, all_creatures: Array, all_corpses: Array) -> Array:
+	# print_debug("Spell '%s' get_valid_targets() not implemented. Returning empty array." % spell_name)
+	return []
+
+func get_description_with_level() -> String:
+	return "%s (Lvl %d)\nDE Cost: %d\n%s" % [spell_name, spell_level, de_cost, get_level_specific_description()]
+
+# Specific spells should override this to show what changes with levels.
+func get_level_specific_description() -> String:
+	return spell_description # Base description by default
+
+func upgrade_spell():
+	if spell_level < max_spell_level:
+		spell_level += 1
+		# Specific spells should override this to update their stats based on the new level
+		# (e.g., increased damage, reduced DE cost, more targets).
+		# print_debug("Spell '%s' upgraded to level %d." % [spell_name, spell_level])
+		return true
+	# print_debug("Spell '%s' is already at max level (%d)." % [spell_name, max_spell_level])
+	return false
+
+# Helper to set runtime references. Called by Necromancer when preparing spells.
+func set_runtime_references(caster_node, gm_node, bg_node):
+	self.caster = caster_node
+	self.game_manager = gm_node
+	self.battle_grid = bg_node

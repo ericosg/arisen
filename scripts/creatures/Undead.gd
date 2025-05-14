@@ -1,71 +1,81 @@
-# Undead.gd - Base class for undead creatures
-class_name Undead
+# ./scripts/creatures/Undead.gd
 extends Creature
+class_name Undead
 
-@export var original_creature_class_name: String = "" # What it was before (e.g., "Human", "Alien")
-# finality_counter is inherited from Creature, default 0. Set it in constructor or factory.
+# Undead creatures have a finality counter, which is already defined in Creature.gd
+# This script primarily ensures Undead-specific initialization and faction setting.
 
-func _init(ap: int = 1, hp: int = 1, spd: SpeedType = SpeedType.NORMAL, flying: bool = false, reach: bool = false, finality: int = 1, orig_class: String = ""):
-	super._init(ap, hp, spd, flying, reach)
-	faction = CreatureFaction.UNDEAD # Undead fight for the player (defender side)
-	finality_counter = finality
-	original_creature_class_name = orig_class
+# Signal for when finality counter changes, could be useful for UI or other effects.
+signal finality_changed(undead_instance: Undead, new_finality: int)
 
-func die() -> void:
-	finality_counter -= 1
-	print("Undead %s at %s,%s was struck down. Finality: %d -> %d" % [self.name, lane, row, finality_counter + 1, finality_counter])
+func _init():
+	# Undead creatures always belong to the UNDEAD faction.
+	# This is set here to ensure it's the default for any node this script is attached to,
+	# even before initialize_creature is called.
+	faction = Faction.UNDEAD
 
-	var game_manager = $GameManager
-	if not game_manager:
-		printerr("Undead cannot find GameManager to report death!")
-		queue_free() # Failsafe cleanup
+# Override initialize_creature to handle Undead-specific setup.
+func initialize_creature(config: Dictionary):
+	# Call the parent's initialize_creature method first to set up common attributes.
+	super.initialize_creature(config)
+
+	# Ensure the faction is correctly set to UNDEAD, overriding any config just in case.
+	self.faction = Faction.UNDEAD 
+
+	# The finality_counter should be provided in the config when an Undead is created.
+	# This value is determined by the ReanimateSpell (corpse's finality - 1).
+	# If not provided, it defaults to 0, meaning it cannot be reanimated further by default
+	# unless a spell explicitly gave the corpse a starting finality.
+	# The GDD implies the reanimation spell calculates this, so it should be in the config.
+	self.finality_counter = config.get("finality_counter", 0) 
+	emit_signal("finality_changed", self, self.finality_counter)
+
+	# Undead types (Skeleton, Zombie, Spirit) will have their specific stats (health, attack),
+	# speed, flying status, etc., set by the config passed from the ReanimateSpell.
+	# For example, a Skeleton config would set max_health=1, attack_power=1.
+	# A Zombie config would use original_max_health from the corpse for its health.
+	# This base Undead.gd doesn't need to know those specifics, only that they come from config.
+
+	# print_debug("Undead creature '%s' initialized. Finality: %d" % [creature_name, finality_counter])
+
+# Method to increase the finality counter of this Undead creature.
+# This would typically be called by a spell effect.
+func increase_finality_counter(amount: int):
+	if not is_alive: # Can only increase finality on living Undead
+		return
+	if amount <= 0:
 		return
 
-	if finality_counter < 0: # Should be <= 0, but <0 if init with 0 and dies.
-		print("%s crumbles to dust (finality exhausted)." % self.name)
-		game_manager.undead_permanently_died(self) # Inform GM
-		game_manager.handle_creature_death(self) # Standard death processing (remove from lists etc)
-		queue_free() # Undead handles its own queue_free
-	else:
-		print("%s will rise again (finality: %d remaining)." % [self.name, finality_counter])
-		# It doesn't "die" in terms of game lists yet, it "respawns".
-		# GameManager needs to handle its re-placement.
-		# Remove from grid temporarily before re-placement attempt.
-		game_manager.battle_grid.remove_creature_from_coords(Vector2(lane, row))
-		game_manager.undead_died_with_finality_remaining(self)
-		# DO NOT call super.die() or queue_free() here, as it's respawning.
+	self.finality_counter += amount
+	# print_debug("'%s' finality increased by %d. New finality: %d" % [creature_name, amount, finality_counter])
+	emit_signal("finality_changed", self, self.finality_counter)
+	# Potentially update UI or visuals related to finality.
 
-# Static factory method to create undead from a former living creature's data
-# original_creature_for_stats: This should be the Creature *instance* that died,
-# or a dictionary holding its relevant stats (attack_power, max_health, speed_type, is_flying, has_reach, get_class())
-static func create_from_creature(original_creature_for_stats: Creature, undead_type_str: String, necromancer_level: int) -> Undead:
-	var new_undead: Undead
+# Method to decrease the finality counter.
+# The main decrease happens when a corpse is reanimated (corpse's finality - 1 = new Undead's finality).
+# This method could be used by other spell effects if needed.
+func decrease_finality_counter(amount: int):
+	if not is_alive:
+		return
+	if amount <= 0:
+		return
 	
-	var base_ap = original_creature_for_stats.attack_power
-	var base_hp = original_creature_for_stats.max_health
-	var base_speed = original_creature_for_stats.speed_type
-	var base_flying = original_creature_for_stats.is_flying
-	var base_reach = original_creature_for_stats.has_reach
-	var base_class_name = original_creature_for_stats.get_class() # What it was
+	self.finality_counter = max(0, self.finality_counter - amount) # Finality cannot go below 0
+	# print_debug("'%s' finality decreased by %d. New finality: %d" % [creature_name, amount, finality_counter])
+	emit_signal("finality_changed", self, self.finality_counter)
 
-	var finality_bonus = int(necromancer_level / 3) # Example: +1 finality every 3 necro levels
 
-	match undead_type_str.to_lower():
-		"skeleton":
-			# Skeletons are 1/1 but might inherit reach. Speed Normal.
-			new_undead = Undead.new(1, 1, SpeedType.NORMAL, false, base_reach, 1 + finality_bonus, base_class_name)
-		"zombie":
-			# Zombies are 1/Y (original max health), speed reduced, might inherit reach.
-			new_undead = Undead.new(1, base_hp, SpeedType.SLOW, false, base_reach, 1 + finality_bonus, base_class_name)
-		"spirit":
-			# Spirits are X/1 (original attack power), fast, flying, might inherit reach.
-			new_undead = Undead.new(base_ap, 1, SpeedType.FAST, true, base_reach, 1 + finality_bonus, base_class_name)
-		_: # Default to skeleton if type is unknown
-			printerr("Unknown undead type requested: %s. Defaulting to Skeleton." % undead_type_str)
-			new_undead = Undead.new(1, 1, SpeedType.NORMAL, false, base_reach, 1 + finality_bonus, base_class_name)
-	
-	return new_undead
+# The die() method from Creature.gd is inherited.
+# When an Undead dies, Creature.gd's die() method will emit the "died" signal.
+# The GameManager, upon receiving this signal for an Undead creature,
+# will use its get_data_for_corpse_creation() method.
+# Creature.gd's get_data_for_corpse_creation() already correctly includes
+# the Undead's current finality_counter in the payload if its faction is UNDEAD.
+# So, no override of die() or get_data_for_corpse_creation() is strictly needed here
+# for the core finality-on-death mechanic.
 
-func add_finality(amount: int) -> void:
-	finality_counter += amount
-	print("%s gained %d finality. Total: %d" % [self.name, amount, finality_counter])
+# Example: If Undead had a specific visual cue for finality, you might connect here.
+# func _on_finality_changed(new_finality):
+#    if has_node("FinalitySpriteIndicator"):
+#        # Update visual based on new_finality
+#        pass

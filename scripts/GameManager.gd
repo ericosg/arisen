@@ -1,468 +1,704 @@
-# GameManager.gd
-class_name GameManager
+# ./scripts/GameManager.gd
 extends Node
+class_name GameManager
 
-signal wave_started(wave_number)
-signal wave_ended(wave_number)
-signal turn_started(turn_number)
-signal turn_ended(turn_number)
-signal human_population_changed(new_count)
-signal creature_died(creature_instance, last_position, creature_original_data) # Added original data for reanimation
-signal request_reanimate(dead_creature_info) # Passes data of the dead creature
+# --- SIGNALS ---
+signal turn_started(turn_number: int)
+signal wave_started(wave_number: int, turn_number: int)
+signal player_phase_started(phase_name: String) # e.g., "PRE_BATTLE", "REANIMATE_AFTER_WAVE"
+signal battle_phase_started
+signal wave_ended(wave_number: int, turn_number: int)
+signal turn_ended(turn_number: int)
+signal game_over(reason: String) # "humans_extinct", "player_won"
+signal human_population_changed(new_population: int)
+signal corpse_added(corpse: CorpseData)
+signal corpse_removed(corpse: CorpseData)
+signal undead_roster_changed(new_roster: Array[Creature]) # Pass the whole roster or specific changes
 
-# Grid layout
-const GRID_COLUMNS = 8
-const TOTAL_GRID_ROWS = 6
-const ATTACKER_ROWS_COUNT = 3
-const DEFENDER_ROWS_COUNT = 3
+# --- GAME STATE ENUMS ---
+enum GamePhase {
+	NONE,
+	OUT_OF_TURN,      # MC leveling, spell upgrades
+	TURN_STARTING,    # Replenish DE, add humans
+	PLAYER_PRE_BATTLE,# Player places units, casts non-combat spells
+	BATTLE_IN_PROGRESS, # Combat resolution
+	PLAYER_POST_BATTLE, # Player reanimates new corpses
+	WAVE_ENDING,
+	TURN_ENDING       # Alien pass-through, corpse decay
+}
 
-# Screen row indices for attackers (top part of the grid)
-const ATTACKER_SCREEN_ROW_START = 0
-const ATTACKER_FIRST_SCREEN_ROW = 0      # Their "first row" (closest to top of screen)
-const ATTACKER_SECOND_SCREEN_ROW = 1
-const ATTACKER_THIRD_SCREEN_ROW = 2       # Their "third row" (closest to middle)
-
-# Screen row indices for defenders (bottom part of the grid)
-const DEFENDER_SCREEN_ROW_START = 3
-const DEFENDER_THIRD_SCREEN_ROW = 3       # Their "third row" (closest to middle)
-const DEFENDER_SECOND_SCREEN_ROW = 4
-const DEFENDER_FIRST_SCREEN_ROW = 5      # Their "first row" (closest to bottom of screen)
-
-
-var human_population: int = 1000
-var current_wave_number: int = 0
-var is_wave_active: bool = false
-var wave_timer: Timer = null
-
+# --- CORE GAME VARIABLES ---
 var current_turn: int = 0
-var waves_per_turn: int = 3 # Example
 var current_wave_in_turn: int = 0
+var max_waves_per_turn: int = 5 # Example, can be dynamic
+var waves_with_new_aliens: int = 3 # Example, aliens only spawn for first X waves
 
-var living_humans: Array[Human] = []
-var living_aliens: Array[Alien] = []
-var living_undead: Array[Undead] = []
+var human_civilian_population: int = 1000 : set = _set_human_civilian_population
+const MAX_HUMAN_POPULATION: int = 1000 # Or loaded from config
+const INITIAL_HUMAN_POPULATION: int = 1000
 
-# Stores data of creatures that died and can be reanimated
-# Each entry: { "original_creature": Creature, "position": Vector2, "time_of_death": int, "original_class_name": String }
-var dead_creatures_for_reanimation = []
+var current_game_phase: GamePhase = GamePhase.NONE
 
-@onready var battle_grid: Node2D = $"../BattleGrid"
-@onready var necromancer: Node2D = $"../Necromancer"
+# --- PLAYER/NECROMANCER DATA ---
+# Reference to the Necromancer node
+var necromancer_node: Necromancer 
 
+# --- CREATURE MANAGEMENT ---
+# Lists to hold active creature nodes
+var living_humans_on_grid: Array[Creature] = []
+var living_aliens_on_grid: Array[Creature] = []
+var living_undead_on_grid: Array[Creature] = [] # Player's undead currently on the battlefield
 
-func _ready() -> void:
-	print("GameManager ready. Arisen awaits.")
-	wave_timer = Timer.new()
-	wave_timer.one_shot = true
-	wave_timer.wait_time = 5.0 # Time between waves
-	wave_timer.connect("timeout", _on_wave_timer_timeout)
-	add_child(wave_timer) # Important: Timer needs to be in the scene tree
+var player_undead_roster: Array[Creature] = [] # Undead not yet deployed, in the player's "pool"
+var available_corpses: Array[CorpseData] = [] # List of CorpseData resources
 
-	if necromancer:
-		connect("turn_started", Callable(necromancer, "_on_turn_started")) # Ensure Necromancer has this
-		connect("request_reanimate", Callable(necromancer, "handle_reanimation_request")) # Ensure Necromancer has this
+# --- NODE REFERENCES ---
+# These should be assigned when GameManager is ready, typically by a main "Game" scene.
+var battle_grid_node: BattleGrid
+var units_container_node: Node2D # A Node2D to parent all creature visual instances
 
-func start_game() -> void:
-	print("The invasion begins!")
+# --- CONFIGURATION DATA (Paths to creature scripts/scenes if not using class_name directly) ---
+# These would ideally be loaded from resources or a config file.
+const CREATURE_SCRIPT_PATHS = {
+	"Skeleton": "res://scripts/creatures/Skeleton.gd",
+	"Zombie": "res://scripts/creatures/Zombie.gd",
+	"Spirit": "res://scripts/creatures/Spirit.gd",
+	"Human_Civilian": "res://scripts/creatures/Human.gd", # Assuming specific types use base Human.gd
+	"Human_Swordsman": "res://scripts/creatures/Human.gd",
+	"Human_Archer": "res://scripts/creatures/Human.gd",
+	"Alien_FireAnt": "res://scripts/creatures/Alien.gd",
+	"Alien_Wasp": "res://scripts/creatures/Alien.gd",
+	# Add all creature types and their script paths
+}
+const INITIAL_FINALITY_FOR_NEW_CORPSES: int = 1 # When a living Human/Alien dies
+
+# --- TEMPORARY STATE FOR COMBAT ---
+var combat_log: Array[String] = [] # For storing messages during a battle phase
+
+func _ready():
+	# Initialization logic here
+	# print_debug("GameManager ready.")
+	# It's crucial that necromancer_node, battle_grid_node, and units_container_node are set
+	# by the scene that instantiates GameManager before calling start_new_game() or similar.
+	pass
+
+# --- PUBLIC API / GAME CONTROL ---
+func start_new_game():
+	# print_debug("Starting new game...")
 	current_turn = 0
-	current_wave_in_turn = 0
-	current_wave_number = 0
-	human_population = 100 # Starting population
-	emit_signal("human_population_changed", human_population)
-	# Clear any existing creatures
-	for creature_array in [living_humans, living_aliens, living_undead]:
-		for creature_instance in creature_array:
-			if is_instance_valid(creature_instance):
-				creature_instance.queue_free()
-		creature_array.clear()
-	dead_creatures_for_reanimation.clear()
-	battle_grid.initialize_grid() # Reset grid state
+	_set_human_civilian_population(INITIAL_HUMAN_POPULATION)
+	
+	living_humans_on_grid.clear()
+	living_aliens_on_grid.clear()
+	living_undead_on_grid.clear()
+	player_undead_roster.clear()
+	available_corpses.clear()
+	
+	if not is_instance_valid(necromancer_node):
+		printerr("GameManager: Necromancer node not assigned! Cannot start game.")
+		return
+	if not is_instance_valid(battle_grid_node):
+		printerr("GameManager: BattleGrid node not assigned! Cannot start game.")
+		return
+	if not is_instance_valid(units_container_node):
+		printerr("GameManager: UnitsContainer node not assigned! Cannot start game.")
+		return
+		
+	# Initialize Necromancer (e.g., reset level, DE, learn starting spells)
+	# necromancer_node.initialize_for_new_game() # Needs method in Necromancer.gd
+	necromancer_node.assign_runtime_references(self, battle_grid_node) # Give Necro refs to GM and BG
 
-	start_next_turn()
+	# TODO: Player can level up MC, spells (Out-of-Turn Phase)
+	_change_game_phase(GamePhase.OUT_OF_TURN)
+	# For now, let's jump straight to starting the first turn after a brief moment or UI interaction
+	# proceed_to_next_turn() # This would be called by UI later
 
-func start_next_turn() -> void:
+func proceed_to_next_turn(): # Called by UI "Next Turn" button
+	if current_game_phase != GamePhase.OUT_OF_TURN and current_game_phase != GamePhase.TURN_ENDING and current_game_phase != GamePhase.NONE:
+		printerr("GameManager: Cannot proceed to next turn from phase: %s" % GamePhase.keys()[current_game_phase])
+		return
+	
 	current_turn += 1
 	current_wave_in_turn = 0
+	# print_debug("--- Starting Turn %d ---" % current_turn)
 	emit_signal("turn_started", current_turn)
-	# Initial human spawn at start of game/turn if desired
-	if current_turn == 1: # Example: Spawn initial humans only at the very start
-		spawn_initial_humans(5) # Spawn 5 humans
-	start_next_wave()
-
-func start_next_wave() -> void:
-	current_wave_number += 1
-	current_wave_in_turn += 1
-	is_wave_active = true
-	emit_signal("wave_started", current_wave_number)
-	spawn_wave_aliens(5 + current_wave_number) # Example: Number of aliens increases
-
-func _on_wave_timer_timeout() -> void:
-	if current_wave_in_turn >= waves_per_turn:
-		emit_signal("turn_ended", current_turn)
-		# Potentially add a "preparation phase" call here for the player
-		start_next_turn()
-	else:
-		start_next_wave()
-
-func end_wave_procedures() -> void:
-	is_wave_active = false
-	emit_signal("wave_ended", current_wave_number)
+	_change_game_phase(GamePhase.TURN_STARTING)
 	
-	# Simplified: Process combat, then check for next phase
-	# Movement is now part of placement. If turn-based movement is needed, add here.
-	process_combat()
-
-	if living_aliens.is_empty() and human_population > 0 : # Wave cleared
-		print("Wave %d cleared!" % current_wave_number)
-		wave_timer.start() # Start timer for next wave/turn
-	elif human_population <= 0:
-		game_over(false) # Humans lost
-	# Add other win/loss conditions for the wave/turn if necessary
-
-func check_game_state_after_combat() -> void:
-	if human_population <= 0:
-		game_over(false)
-		return
-	if living_aliens.is_empty() and is_wave_active: # All aliens defeated this wave
-		end_wave_procedures()
-
-# New Placement Logic Core
-# Returns: Dictionary { "position": Vector2, "shifts": Array[Dictionary] }
-# OR null if no spot found.
-# Note the change in return type from '-> Dictionary' to '-> Variant'
-func _find_placement_position_and_shifts(creature_to_place: Creature) -> Variant: # MODIFIED LINE
-	var is_attacker = creature_to_place is Alien
-	var speed = creature_to_place.speed_type
-
-	var target_lanes = [] # Columns 0 to GRID_COLUMNS - 1
-	for i in range(GRID_COLUMNS): target_lanes.append(i)
-
-	var preferred_rows_orders = [] # Array of screen row indices
-
-	if is_attacker:
-		match speed:
-			Creature.SpeedType.SLOW:
-				preferred_rows_orders = [[ATTACKER_FIRST_SCREEN_ROW, ATTACKER_SECOND_SCREEN_ROW, ATTACKER_THIRD_SCREEN_ROW]] # Push
-			Creature.SpeedType.FAST:
-				preferred_rows_orders = [[ATTACKER_THIRD_SCREEN_ROW], [ATTACKER_SECOND_SCREEN_ROW], [ATTACKER_FIRST_SCREEN_ROW]] # No push
-			_:
-				preferred_rows_orders = [[ATTACKER_FIRST_SCREEN_ROW], [ATTACKER_SECOND_SCREEN_ROW], [ATTACKER_THIRD_SCREEN_ROW]] # No push
-	else: # Defender
-		match speed:
-			Creature.SpeedType.SLOW:
-				preferred_rows_orders = [[DEFENDER_FIRST_SCREEN_ROW, DEFENDER_SECOND_SCREEN_ROW, DEFENDER_THIRD_SCREEN_ROW]] # Push
-			Creature.SpeedType.FAST:
-				preferred_rows_orders = [[DEFENDER_THIRD_SCREEN_ROW], [DEFENDER_SECOND_SCREEN_ROW], [DEFENDER_FIRST_SCREEN_ROW]] # No push
-			_:
-				preferred_rows_orders = [[DEFENDER_FIRST_SCREEN_ROW], [DEFENDER_SECOND_SCREEN_ROW], [DEFENDER_THIRD_SCREEN_ROW]] # No push
-	
-	for lane_idx in target_lanes:
-		for row_order_attempt in preferred_rows_orders:
-			var shifts = [] # Shifts for this specific attempt (lane + row_order)
-			var placement_coord = Vector2.ONE * -1
-
-			if speed == Creature.SpeedType.SLOW: # Handle pushing logic
-				var r1_coord = Vector2(lane_idx, row_order_attempt[0])
-				var r2_coord = Vector2(lane_idx, row_order_attempt[1])
-				var r3_coord = Vector2(lane_idx, row_order_attempt[2])
-
-				var c1 = battle_grid.get_creature_at_coords(r1_coord)
-				var c2 = battle_grid.get_creature_at_coords(r2_coord)
-				var c3 = battle_grid.get_creature_at_coords(r3_coord) # Creature in the 3rd cell of the push path
-
-				if c1 == null: # First row in order is empty
-					placement_coord = r1_coord
-				elif c2 == null: # Second row is empty, c1 can move
-					shifts.append({"creature": c1, "from": r1_coord, "to": r2_coord})
-					placement_coord = r1_coord
-				elif c3 == null: # Third row is empty, c1 and c2 can move
-					# Only add c2 to shifts if it actually exists
-					if c2 != null: # This check was missing, c2 could be null if r2_coord was empty
-						shifts.append({"creature": c2, "from": r2_coord, "to": r3_coord})
-					# c1 always exists if we are in this part of the elif
-					shifts.append({"creature": c1, "from": r1_coord, "to": r2_coord})
-					placement_coord = r1_coord
-				# Else: cannot push, column is full for slow unit in this lane
-			
-			else: # Fast or Normal - no pushing, just find first empty preferred
-				for screen_row_idx in row_order_attempt:
-					var current_coord = Vector2(lane_idx, screen_row_idx)
-					if battle_grid.is_cell_empty(current_coord):
-						placement_coord = current_coord
-						break # Found a spot in this lane
-			
-			if placement_coord != Vector2.ONE * -1:
-				return {"position": placement_coord, "shifts": shifts} # This is a Dictionary
-				
-	return null # No position found - This is now allowed due to '-> Variant'
-
-func _execute_placement(creature_to_place: Creature, placement_info: Dictionary) -> bool:
-	if placement_info == null:
-		print_debug("Placement failed for ", creature_to_place.get_class(), ": No suitable spot.")
-		creature_to_place.queue_free() # Clean up if not placed
-		return false
-
-	# Execute shifts
-	for shift_op in placement_info.shifts:
-		var shifted_creature: Creature = shift_op.creature
-		battle_grid.remove_creature_from_coords(shift_op.from)
-		# shifted_creature.play_move_animation(shift_op.to) # Optional animation call
-		battle_grid.place_creature_at_coords(shifted_creature, shift_op.to)
-		print_debug("Shifted ", shifted_creature.get_class(), " from ", shift_op.from, " to ", shift_op.to)
-
-	# Place the new creature
-	battle_grid.place_creature_at_coords(creature_to_place, placement_info.position)
-	print_debug("Placed new ", creature_to_place.get_class(), " at ", placement_info.position)
-	
-	# Add to respective living list - AFTER it's successfully placed
-	if creature_to_place is Alien:
-		living_aliens.append(creature_to_place)
-	elif creature_to_place is Human:
-		living_humans.append(creature_to_place)
-	elif creature_to_place is Undead:
-		living_undead.append(creature_to_place)
-	
-	add_child(creature_to_place) # Ensure it's in the scene tree for processing
-	return true
-
-func spawn_creature_with_logic(creature: Creature) -> bool:
-	var placement_info = _find_placement_position_and_shifts(creature)
-	if placement_info:
-		return _execute_placement(creature, placement_info)
-	else:
-		print("Could not find placement for new creature: ", creature.name)
-		if is_instance_valid(creature) and creature.get_parent() == null: # If not added to scene yet
-			creature.queue_free()
-		return false
-
-func spawn_wave_aliens(count: int) -> void:
-	for _i in range(count):
-		var type_roll = randi() % 5
-		var new_alien: Alien
-		match type_roll:
-			0: new_alien = Alien.create_fireant()
-			1: new_alien = Alien.create_wasp()
-			2: new_alien = Alien.create_spider()
-			3: new_alien = Alien.create_scorpion()
-			_: new_alien = Alien.create_beetle()
-		new_alien.name = new_alien.get_class() + str(living_aliens.size() + 1) # Unique name
-		spawn_creature_with_logic(new_alien)
-	check_game_state_after_combat() # Check if wave is instantly over (e.g. no valid spots)
-
-func spawn_initial_humans(count: int) -> void:
-	for _i in range(count):
-		var type_roll = randi() % 5
-		var new_human: Human
-		match type_roll:
-			0: new_human = Human.create_civilian()
-			1: new_human = Human.create_spearman()
-			2: new_human = Human.create_swordsman()
-			3: new_human = Human.create_archer()
-			_: new_human = Human.create_knight()
-		new_human.name = new_human.get_class() + str(living_humans.size() + 1)
-		spawn_creature_with_logic(new_human)
-
-func process_combat() -> void:
-	var all_combatants = living_aliens + living_humans + living_undead
-	all_combatants.sort_custom(func(a,b): return a.lane < b.lane if a.lane != b.lane else a.row < b.row) # Process systematically
-
-	var combat_actions = [] # Store {attacker, target, damage}
-
-	# Determine targets
-	for creature_a in all_combatants:
-		if creature_a.is_dead(): continue
-
-		for creature_b in all_combatants:
-			if creature_a == creature_b or creature_b.is_dead(): continue
-
-			# Basic targeting: different factions, in same lane or adjacent based on reach
-			var is_a_attacker_faction = creature_a is Alien
-			var is_b_attacker_faction = creature_b is Alien
-			if is_a_attacker_faction == is_b_attacker_faction: continue # No friendly fire
-
-			var can_a_attack_b = creature_a.can_attack(creature_b)
-			var distance_ok = false
-			var row_diff = abs(creature_a.row - creature_b.row)
-			
-			# Lane check: must be in same lane
-			if creature_a.lane != creature_b.lane: continue
-
-			# Row check for attacking
-			# Assuming non-reach can only attack adjacent rows within their 3-row zone or the enemy's closest row
-			var attack_reach = 1
-			if creature_a.has_reach: attack_reach = TOTAL_GRID_ROWS # Simplification: reach can hit anyone in lane
-			
-			if row_diff <= attack_reach : # And creature_b is a valid target (e.g., not blocked by another unit in front)
-				# Simple: if in range, can attack. More complex: check for blockers.
-				# For now, if in range and can_attack is true, add to actions.
-				if can_a_attack_b:
-					combat_actions.append({"attacker": creature_a, "target": creature_b, "damage": creature_a.attack_power})
-					# Typically one attack per creature per "round" of combat.
-					# If creature_a attacks creature_b, it might not attack others this round.
-					# This simplistic loop allows multiple targets if in range. Refine if needed.
-					break # Creature A found a target this combat phase for its lane
-
-	# Apply damage from actions
-	for action in combat_actions:
-		var attacker: Creature = action.attacker
-		var target: Creature = action.target
-		var damage: int = action.damage
+	# 1. Replenish Necromancer's DE
+	if is_instance_valid(necromancer_node):
+		necromancer_node.replenish_de_to_max()
 		
-		if is_instance_valid(attacker) and not attacker.is_dead() and \
-		   is_instance_valid(target) and not target.is_dead():
-			print("%s (at %d,%d) attacks %s (at %d,%d) for %d damage" % [
-				attacker.get_class(), attacker.lane, attacker.row,
-				target.get_class(), target.lane, target.row,
-				damage
-			])
-			target.take_damage(damage) # take_damage should call handle_creature_death if health <= 0
+	# 2. Add new Human units (auto-placement)
+	_spawn_new_human_contingent()
 	
-	# After all combat actions, check game state (e.g., if all aliens died)
-	check_game_state_after_combat()
+	# Transition to the first wave's pre-battle phase
+	proceed_to_next_wave()
 
+func proceed_to_next_wave(): # Called by UI "Start Next Wave" or "End Player Phase" button
+	if current_game_phase != GamePhase.TURN_STARTING and \
+	   current_game_phase != GamePhase.PLAYER_POST_BATTLE and \
+	   current_game_phase != GamePhase.WAVE_ENDING: # Can also come from wave ending naturally
+		printerr("GameManager: Cannot start next wave from phase: %s" % GamePhase.keys()[current_game_phase])
+		return
 
-func handle_creature_death(creature: Creature) -> void:
-	var last_pos = Vector2(creature.lane, creature.row)
-	battle_grid.remove_creature_from_coords(last_pos)
+	current_wave_in_turn += 1
+	if current_wave_in_turn > max_waves_per_turn:
+		# print_debug("Max waves for turn %d reached. Ending turn." % current_turn)
+		_end_current_turn()
+		return
 
-	# Store data for potential reanimation (if not undead with finality 0)
-	var can_be_reanimated = true
-	if creature is Undead:
-		if creature.finality_counter <= 0: # Already used up finality during its 'die' call
-			can_be_reanimated = false
+	# print_debug("--- Starting Wave %d (Turn %d) ---" % [current_wave_in_turn, current_turn])
+	emit_signal("wave_started", current_wave_in_turn, current_turn)
 	
-	var creature_original_data_for_signal = {
-		"attack": creature.attack_power, # Store stats at time of death
-		"max_health": creature.max_health,
-		"speed_type": creature.speed_type,
-		"is_flying": creature.is_flying,
-		"has_reach": creature.has_reach,
-		"original_class_name": creature.get_class() # To know what it was
-	}
-	# This is the data the reanimation spell will use to determine stats of Zombie/Spirit
-	var dead_info = {
-		"data_for_signal": creature_original_data_for_signal, # For the signal
-		"original_creature_node_for_stats": creature, # Direct ref for Undead.create_from_creature
-		"position": last_pos,
-		"time_of_death": Time.get_ticks_msec(),
-	}
+	# 3. Add new Alien units (auto-placement, if applicable for this wave)
+	if current_wave_in_turn <= waves_with_new_aliens:
+		_spawn_new_alien_wave()
+		
+	# 4. Player Pre-Battle Phase
+	_change_game_phase(GamePhase.PLAYER_PRE_BATTLE)
+	emit_signal("player_phase_started", "PRE_BATTLE")
+	# UI should now allow player to place units from roster, cast spells.
+	# Player clicks "Start Battle" button when ready.
 
-	if can_be_reanimated:
-		dead_creatures_for_reanimation.append(dead_info)
-		# TODO: Instance a clickable "CorpseNode" visually on the battle_grid
-		# corpse_node.init(dead_info)
+func player_ends_pre_battle_phase(): # Called by UI "Start Battle" button
+	if current_game_phase != GamePhase.PLAYER_PRE_BATTLE:
+		printerr("GameManager: Cannot start battle from phase: %s" % GamePhase.keys()[current_game_phase])
+		return
+	
+	# print_debug("Player ends pre-battle phase. Starting battle...")
+	_initiate_battle_phase()
+
+func _initiate_battle_phase():
+	_change_game_phase(GamePhase.BATTLE_IN_PROGRESS)
+	emit_signal("battle_phase_started")
+	combat_log.clear()
+	
+	# --- COMBAT RESOLUTION ---
+	var any_combat_occurred = false
+	for col_idx in range(battle_grid_node.GRID_COLUMNS):
+		if _resolve_combat_in_lane(col_idx):
+			any_combat_occurred = true
+			
+	# print_debug("Battle phase concluded.")
+	# print_debug("Combat Log:\n" + "\n".join(combat_log)) # Optional: display combat log
+
+	# After battle, move to player's post-battle phase (reanimation)
+	_change_game_phase(GamePhase.PLAYER_POST_BATTLE)
+	emit_signal("player_phase_started", "POST_BATTLE_REANIMATE")
+	# UI allows player to reanimate newly created corpses.
+	# Player clicks "End Wave" or "Next Wave" button when ready.
+
+func player_ends_post_battle_phase(): # Called by UI "End Wave" or "Proceed" button
+	if current_game_phase != GamePhase.PLAYER_POST_BATTLE:
+		printerr("GameManager: Cannot end post-battle phase from: %s" % GamePhase.keys()[current_game_phase])
+		return
+	
+	# print_debug("Player ends post-battle (reanimation) phase.")
+	_end_current_wave()
+
+
+func _end_current_wave():
+	# print_debug("--- Ending Wave %d (Turn %d) ---" % [current_wave_in_turn, current_turn])
+	emit_signal("wave_ended", current_wave_in_turn, current_turn)
+	_change_game_phase(GamePhase.WAVE_ENDING)
+
+	# Check if there are any more aliens or if combat is possible.
+	# If no aliens left on grid and no more spawning this turn, or no possible engagements,
+	# the turn might end early.
+	var aliens_remaining_on_grid = living_aliens_on_grid.size() > 0
+	var more_aliens_to_spawn_this_turn = current_wave_in_turn < waves_with_new_aliens
+	
+	if not aliens_remaining_on_grid and not more_aliens_to_spawn_this_turn:
+		# print_debug("No aliens left and no more to spawn this turn. Ending turn early.")
+		_end_current_turn()
+	else:
+		# Proceed to the next wave normally (player will click "Next Wave")
+		# The game is now waiting for player to click "Next Wave" which calls proceed_to_next_wave()
+		# Or, if max waves reached, this will also lead to _end_current_turn() via proceed_to_next_wave()
+		pass
+
+
+func _end_current_turn():
+	# print_debug("--- Ending Turn %d ---" % current_turn)
+	_change_game_phase(GamePhase.TURN_ENDING)
+	
+	# 1. Alien "Pass Through" for survivors
+	var aliens_that_passed_this_turn: Array[Creature] = []
+	for alien in living_aliens_on_grid: # Iterate over a copy if modifying list
+		if not is_instance_valid(alien) or not alien.is_alive: continue
+		
+		var lane_is_clear_for_alien = true
+		# Check if any player units are in the same column as this alien
+		for player_unit in living_humans_on_grid + living_undead_on_grid:
+			if is_instance_valid(player_unit) and player_unit.is_alive and player_unit.grid_pos.x == alien.grid_pos.x:
+				lane_is_clear_for_alien = false
+				break
+		
+		if lane_is_clear_for_alien:
+			aliens_that_passed_this_turn.append(alien)
+			
+	for alien_passed in aliens_that_passed_this_turn:
+		_handle_alien_pass_through(alien_passed, "End of Turn Survivor")
+		# Remove from grid and active list (done by _handle_alien_pass_through if it queues_free)
+		# If not, ensure removal here:
+		if is_instance_valid(alien_passed): # Check if it wasn't already removed
+			_remove_creature_from_game(alien_passed)
+
+	# 2. Corpse Decay: Remove all corpses from available_corpses list
+	# print_debug("Decaying all remaining corpses at end of turn.")
+	var corpses_to_remove = available_corpses.duplicate() # Iterate over copy
+	for corpse_data in corpses_to_remove:
+		_remove_corpse_from_list(corpse_data) # Emits signal
+	available_corpses.clear() # Ensure list is empty
+
+	emit_signal("turn_ended", current_turn)
+	
+	# Check win/loss conditions (e.g., if current_turn == MAX_TURNS_FOR_VICTORY)
+	if current_turn >= 20: # Example win condition
+		_set_game_over("player_won", "Survived 20 turns!")
+		return
+
+	# Transition to Out-of-Turn phase for player upgrades, then player clicks "Next Turn"
+	_change_game_phase(GamePhase.OUT_OF_TURN)
+
+
+# --- SETTERS ---
+func _set_human_civilian_population(value: int):
+	var old_pop = human_civilian_population
+	human_civilian_population = max(0, value) # Cannot go below 0
+	if old_pop != human_civilian_population:
+		emit_signal("human_population_changed", human_civilian_population)
+		# print_debug("Human civilian population changed to: %d" % human_civilian_population)
+		if human_civilian_population == 0:
+			_set_game_over("humans_extinct", "Human civilian population reached zero.")
+
+# --- GAME PHASE MANAGEMENT ---
+func _change_game_phase(new_phase: GamePhase):
+	if current_game_phase != new_phase:
+		# print_debug("GamePhase changing from %s to %s" % [GamePhase.keys()[current_game_phase], GamePhase.keys()[new_phase]])
+		current_game_phase = new_phase
+		# Emit a signal for broader game state changes if needed by UI
+		# emit_signal("game_phase_changed", new_phase)
+
+
+func _set_game_over(reason_key: String, message: String):
+	if current_game_phase == GamePhase.NONE: return # Avoid multiple game over calls if already over
+	
+	# print_debug("GAME OVER: %s" % message)
+	_change_game_phase(GamePhase.NONE) # Or a specific GAME_OVER phase
+	emit_signal("game_over", reason_key)
+	# Here you would typically disable further game input, show a game over screen, etc.
+
+
+# --- CREATURE SPAWNING & MANAGEMENT ---
+func _spawn_new_human_contingent():
+	# Example: Spawn 3 Swordsmen
+	var humans_to_spawn = [
+		{"type": "Human_Swordsman", "config": {"creature_name": "Swordsman", "max_health": 15, "attack_power": 4, "speed_type": Creature.SpeedType.NORMAL}},
+		{"type": "Human_Archer", "config": {"creature_name": "Archer", "max_health": 10, "attack_power": 3, "speed_type": Creature.SpeedType.NORMAL, "has_reach": true}},
+		{"type": "Human_Civilian", "config": {"creature_name": "Civilian", "max_health": 5, "attack_power": 0, "speed_type": Creature.SpeedType.SLOW}},
+	]
+	# GDD Auto-Placement: Center, first row, then push forward rows, then expand columns.
+	_auto_place_units(humans_to_spawn, Creature.Faction.HUMAN)
+
+func _spawn_new_alien_wave():
+	# Example: Spawn a mix of aliens
+	var aliens_to_spawn = [
+		{"type": "Alien_FireAnt", "config": {"creature_name": "FireAnt", "max_health": 8, "attack_power": 3, "speed_type": Creature.SpeedType.FAST}},
+		{"type": "Alien_Wasp", "config": {"creature_name": "Wasp", "max_health": 6, "attack_power": 2, "speed_type": Creature.SpeedType.FAST, "is_flying": true}},
+	]
+	if current_wave_in_turn == 2: # More aliens on wave 2
+		aliens_to_spawn.append({"type": "Alien_Beetle", "config": {"creature_name": "Beetle", "max_health": 20, "attack_power": 2, "speed_type": Creature.SpeedType.SLOW}})
+
+	_auto_place_units(aliens_to_spawn, Creature.Faction.ALIEN)
+
+func _auto_place_units(units_to_spawn_data: Array[Dictionary], faction: Creature.Faction):
+	# Implements GDD auto-placement: Center, first row, then fill rows in center cols, then expand cols.
+	var starting_cols_indices: Array[int] = []
+	var num_units = units_to_spawn_data.size()
+
+	# Determine starting center columns (simplified)
+	# For 8 columns: C,D,E are 2,3,4. D,E are 3,4. E is 4.
+	if num_units == 0: return
+	if num_units == 1:
+		starting_cols_indices = [battle_grid_node.GRID_COLUMNS / 2] # Col D or E if even/odd
+	elif num_units == 2:
+		starting_cols_indices = [battle_grid_node.GRID_COLUMNS / 2 - 1, battle_grid_node.GRID_COLUMNS / 2] # C,D or D,E
+	elif num_units >= 3: # C,D,E then expand
+		starting_cols_indices = [
+			battle_grid_node.GRID_COLUMNS / 2 - 1, 
+			battle_grid_node.GRID_COLUMNS / 2, 
+			battle_grid_node.GRID_COLUMNS / 2 + 1
+		]
+	# This centering needs refinement for perfect balance and expansion for more than 3 units.
+	# For now, let's use a simpler left-to-right fill for the example batch.
+
+	var current_unit_idx = 0
+	var faction_rows: Array[int]
+	if faction == Creature.Faction.HUMAN:
+		faction_rows = [
+			battle_grid_node.get_player_row_y_by_faction_row_num(1), # Player Row 1 (bottom)
+			battle_grid_node.get_player_row_y_by_faction_row_num(2),
+			battle_grid_node.get_player_row_y_by_faction_row_num(3)  # Player Row 3 (front)
+		]
+	elif faction == Creature.Faction.ALIEN:
+		faction_rows = [
+			battle_grid_node.get_alien_row_y_by_faction_row_num(1), # Alien Row 1 (top)
+			battle_grid_node.get_alien_row_y_by_faction_row_num(2),
+			battle_grid_node.get_alien_row_y_by_faction_row_num(3)  # Alien Row 3 (front)
+		]
+	else: return # Should not happen
+
+	# GDD: "always starting from the center and first rows and always push forward before occupying new columns."
+	# This is complex. For now, a simpler L-R fill in preferred rows for demonstration.
+	# Proper implementation of GDD centering and "push forward rows then expand columns" is needed.
+	
+	# Simplified placement: Fill first available row, L-R for now.
+	var preferred_row_y = faction_rows[0] # Faction's "Row 1"
+	
+	for unit_data in units_to_spawn_data:
+		var creature_node: Creature = _create_creature_node_from_config(unit_data["type"], unit_data["config"], faction)
+		if not is_instance_valid(creature_node): continue
+
+		# Find empty cell in preferred_row_y, then next row, etc.
+		var placed = false
+		for row_y in faction_rows: # Try Row 1, then Row 2, then Row 3 for the faction
+			var target_pos = battle_grid_node.find_first_empty_cell_in_row(row_y)
+			if target_pos != Vector2i(-1,-1):
+				if battle_grid_node.place_creature_at(creature_node, target_pos):
+					_add_creature_to_active_lists(creature_node)
+					# Set visual position if units_container_node is used
+					creature_node.position = battle_grid_node.get_world_position_for_grid_cell_center(target_pos)
+					placed = true
+					break
+		if not placed:
+			# print_debug("Could not place %s; no empty cells in designated rows." % creature_node.creature_name)
+			creature_node.queue_free() # Clean up unplaced creature
+
+
+# Called by ReanimateSpell
+func spawn_reanimated_creature(creature_config_from_spell: Dictionary) -> Creature:
+	var script_path = creature_config_from_spell.get("creature_class_script_path", "")
+	if script_path == "":
+		printerr("GameManager: No creature_class_script_path in config for reanimation.")
+		return null
+
+	var creature_node = Node2D.new() # Base node for visuals
+	var creature_script = load(script_path)
+	if not creature_script:
+		printerr("GameManager: Failed to load creature script at %s" % script_path)
+		creature_node.queue_free()
+		return null
+	
+	creature_node.set_script(creature_script)
+	
+	# Now that script is attached, it IS a Creature (or Undead, Skeleton etc.)
+	var actual_creature_instance: Creature = creature_node as Creature 
+	if not is_instance_valid(actual_creature_instance): # Should not happen if script loaded
+		printerr("GameManager: Node did not become a Creature after script attach.")
+		creature_node.queue_free()
+		return null
+
+	# Assign references the creature might need
+	actual_creature_instance.game_manager = self
+	actual_creature_instance.battle_grid = battle_grid_node
+	
+	# Initialize with the full config (name, stats, finality, etc.)
+	actual_creature_instance.initialize_creature(creature_config_from_spell)
+	
+	units_container_node.add_child(actual_creature_instance)
+	
+	# Add to player's Undead Roster (not directly to grid)
+	player_undead_roster.append(actual_creature_instance)
+	emit_signal("undead_roster_changed", player_undead_roster)
+	# print_debug("Reanimated %s (Finality: %d) added to roster." % [actual_creature_instance.creature_name, actual_creature_instance.finality_counter])
+	
+	return actual_creature_instance
+
+
+func _create_creature_node_from_config(creature_type_key: String, config_data: Dictionary, faction_override: Creature.Faction) -> Creature:
+	var script_path = CREATURE_SCRIPT_PATHS.get(creature_type_key, "")
+	if script_path == "":
+		printerr("GameManager: No script path found for creature type key '%s'." % creature_type_key)
+		return null
+
+	var creature_node = Node2D.new()
+	var creature_script = load(script_path)
+	if not creature_script:
+		printerr("GameManager: Failed to load creature script at %s for type %s" % [script_path, creature_type_key])
+		creature_node.queue_free()
+		return null
+	
+	creature_node.set_script(creature_script)
+	
+	var actual_creature_instance: Creature = creature_node as Creature
+	if not is_instance_valid(actual_creature_instance):
+		printerr("GameManager: Node did not become a Creature for type %s." % creature_type_key)
+		creature_node.queue_free()
+		return null
+		
+	actual_creature_instance.game_manager = self
+	actual_creature_instance.battle_grid = battle_grid_node
+	
+	# Ensure faction from config_data is overridden by faction_override (e.g. for Human/Alien spawns)
+	var final_config = config_data.duplicate(true)
+	final_config["faction"] = faction_override 
+	
+	actual_creature_instance.initialize_creature(final_config)
+	units_container_node.add_child(actual_creature_instance)
+	
+	# Connect to its 'died' signal
+	if not actual_creature_instance.died.is_connected(_on_creature_died): # Avoid duplicate connections
+		actual_creature_instance.died.connect(_on_creature_died.bind(actual_creature_instance))
+	
+	return actual_creature_instance
+
+func _add_creature_to_active_lists(creature: Creature):
+	if not is_instance_valid(creature): return
+
+	match creature.faction:
+		Creature.Faction.HUMAN:
+			if not living_humans_on_grid.has(creature): living_humans_on_grid.append(creature)
+		Creature.Faction.ALIEN:
+			if not living_aliens_on_grid.has(creature): living_aliens_on_grid.append(creature)
+		Creature.Faction.UNDEAD:
+			if not living_undead_on_grid.has(creature): living_undead_on_grid.append(creature)
+			# If it was in roster, remove it (assuming it's now on grid)
+			if player_undead_roster.has(creature):
+				player_undead_roster.erase(creature)
+				emit_signal("undead_roster_changed", player_undead_roster)
+
+# Called when a creature's 'died' signal is emitted
+func _on_creature_died(creature_that_died: Creature):
+	if not is_instance_valid(creature_that_died):
+		return
+
+	# print_debug("GameManager: Detected death of %s at %s" % [creature_that_died.creature_name, str(creature_that_died.grid_pos)])
+	
+	# 1. Create CorpseData resource
+	var corpse_payload = creature_that_died.get_data_for_corpse_creation()
+	corpse_payload["grid_pos_on_death"] = creature_that_died.grid_pos
+	corpse_payload["turn_of_death"] = current_turn
+	
+	# Assign initial finality if it was a living Human/Alien
+	if creature_that_died.faction == Creature.Faction.HUMAN or creature_that_died.faction == Creature.Faction.ALIEN:
+		corpse_payload["finality_counter"] = INITIAL_FINALITY_FOR_NEW_CORPSES
+	else: # It was Undead, its own finality is already in the payload
+		corpse_payload["finality_counter"] = corpse_payload.get("current_finality_counter_on_death", 0)
+
+	var new_corpse = CorpseData.new(corpse_payload)
+	available_corpses.append(new_corpse)
+	emit_signal("corpse_added", new_corpse)
+	# print_debug("Corpse created for %s. Finality: %d" % [new_corpse.original_creature_name, new_corpse.finality_counter])
+
+	# 2. Remove creature from grid and active lists
+	_remove_creature_from_game(creature_that_died)
+
+
+func _remove_creature_from_game(creature_to_remove: Creature):
+	if not is_instance_valid(creature_to_remove): return
+
+	# print_debug("GameManager: Removing %s from game." % creature_to_remove.creature_name)
+	# Remove from BattleGrid
+	if battle_grid_node.is_valid_grid_position(creature_to_remove.grid_pos):
+		battle_grid_node.remove_creature_from(creature_to_remove.grid_pos) # Emits cell_vacated
 
 	# Remove from active lists
-	if creature is Human:
-		living_humans.erase(creature)
-		human_population -= 1 # Or more, depending on creature value
-		emit_signal("human_population_changed", human_population)
-		if human_population <= 0:
-			game_over(false) # Humans lost
-	elif creature is Alien:
-		living_aliens.erase(creature)
-	elif creature is Undead:
-		living_undead.erase(creature) # Already handled by its own die() if finality becomes 0
+	match creature_to_remove.faction:
+		Creature.Faction.HUMAN:
+			if living_humans_on_grid.has(creature_to_remove): living_humans_on_grid.erase(creature_to_remove)
+		Creature.Faction.ALIEN:
+			if living_aliens_on_grid.has(creature_to_remove): living_aliens_on_grid.erase(creature_to_remove)
+		Creature.Faction.UNDEAD:
+			if living_undead_on_grid.has(creature_to_remove): living_undead_on_grid.erase(creature_to_remove)
+			if player_undead_roster.has(creature_to_remove): # Should not be in roster if on grid and dying
+				player_undead_roster.erase(creature_to_remove) 
+				emit_signal("undead_roster_changed", player_undead_roster)
 
-	# Signal that a creature died, passing its data too
-	emit_signal("creature_died", creature, last_pos, creature_original_data_for_signal)
+	# Finally, free the creature node from the scene tree
+	if is_instance_valid(creature_to_remove) and not creature_to_remove.is_queued_for_deletion():
+		creature_to_remove.queue_free()
+
+func consume_corpse(corpse_to_consume: CorpseData): # Called by ReanimateSpell
+	if available_corpses.has(corpse_to_consume):
+		available_corpses.erase(corpse_to_consume)
+		emit_signal("corpse_removed", corpse_to_consume)
+		# print_debug("Corpse of %s consumed for reanimation." % corpse_to_consume.original_creature_name)
+
+func _remove_corpse_from_list(corpse_data: CorpseData): # Internal for decay or other reasons
+	if available_corpses.has(corpse_data):
+		available_corpses.erase(corpse_data)
+		emit_signal("corpse_removed", corpse_data)
+
+
+# --- COMBAT LOGIC ---
+func _resolve_combat_in_lane(column_index: int) -> bool:
+	var combat_this_lane = false
+	# GDD: Sequential 1v1 engagements at the "front" of the lane.
 	
-	# Original creature node is queued for deletion by its own die() method usually.
-	# If not, queue_free it here:
-	# creature.queue_free() # Ensure this doesn't happen twice
+	while true: # Loop until no more engagements possible in this lane for this wave
+		var front_player_unit: Creature = null
+		var front_alien_unit: Creature = null
+		var front_player_unit_y = -1
+		var front_alien_unit_y = -1
+
+		# Find front-most player unit (Human or Undead) in this column
+		# Player rows are 0 (bottom, their R1), 1 (R2), 2 (R3, closest to aliens)
+		for r_idx in range(battle_grid_node.GRID_ROWS_PER_FACTION -1, -1, -1): # Check from player's R3 (idx 2) down to R1 (idx 0)
+			var creature = battle_grid_node.get_creature_at(Vector2i(column_index, r_idx))
+			if is_instance_valid(creature) and creature.is_alive and \
+			   (creature.faction == Creature.Faction.HUMAN or creature.faction == Creature.Faction.UNDEAD):
+				front_player_unit = creature
+				front_player_unit_y = r_idx
+				break
+		
+		# Find front-most Alien unit in this column
+		# Alien rows are 3 (closest to player, their R3), 4 (R2), 5 (top, their R1)
+		for r_idx in range(battle_grid_node.GRID_ROWS_PER_FACTION, battle_grid_node.TOTAL_GRID_ROWS): # Check from alien's R3 (idx 3) up to R1 (idx 5)
+			var creature = battle_grid_node.get_creature_at(Vector2i(column_index, r_idx))
+			if is_instance_valid(creature) and creature.is_alive and creature.faction == Creature.Faction.ALIEN:
+				front_alien_unit = creature
+				front_alien_unit_y = r_idx
+				break
+		
+		if not is_instance_valid(front_player_unit) or not is_instance_valid(front_alien_unit):
+			# One or both sides have no more units in this lane for this wave's combat sequence
+			break # Exit while loop for this lane
+
+		combat_this_lane = true
+		var log_entry = "Lane %d: %s (H:%d/%d, P:%s) vs %s (H:%d/%d, P:%s)" % [
+			column_index,
+			front_player_unit.creature_name, front_player_unit.current_health, front_player_unit.max_health, str(front_player_unit.grid_pos),
+			front_alien_unit.creature_name, front_alien_unit.current_health, front_alien_unit.max_health, str(front_alien_unit.grid_pos)
+		]
+		
+		# Engagement Check (Unblockable Alien "Pass Through")
+		var alien_passed_through = false
+		if front_alien_unit.is_flying and not front_player_unit.is_flying and not front_player_unit.has_reach:
+			log_entry += " - %s is Flying, %s (Ground w/o Reach) cannot block. ALIEN PASSES!" % [front_alien_unit.creature_name, front_player_unit.creature_name]
+			combat_log.append(log_entry)
+			_handle_alien_pass_through(front_alien_unit, "Mid-battle Unblockable")
+			_remove_creature_from_game(front_alien_unit) # Alien removed after passing
+			alien_passed_through = true
+			# Player unit remains, alien is gone. Continue loop to see if another alien steps up.
+		
+		if alien_passed_through:
+			continue # Re-evaluate lane with next alien if any
+
+		# Direct Combat
+		log_entry += " - ENGAGE!"
+		var p_hp_before = front_player_unit.current_health
+		var a_hp_before = front_alien_unit.current_health
+
+		# Simultaneous damage
+		front_player_unit.take_damage(front_alien_unit.attack_power)
+		front_alien_unit.take_damage(front_player_unit.attack_power)
+
+		log_entry += " | %s takes %d dmg (HP: %d->%d)" % [front_player_unit.creature_name, front_alien_unit.attack_power, p_hp_before, front_player_unit.current_health]
+		log_entry += " | %s takes %d dmg (HP: %d->%d)" % [front_alien_unit.creature_name, front_player_unit.attack_power, a_hp_before, front_alien_unit.current_health]
+		combat_log.append(log_entry)
+
+		# Deaths are handled by the _on_creature_died signal automatically,
+		# which removes them from grid and lists.
+		# If both died, the loop will break on next iteration as no valid pair will be found.
+		# If one died, the loop continues, and the survivor faces the next in line.
+		
+		# Safety break if something goes wrong to prevent infinite loop (e.g. units not dying correctly)
+		if not front_player_unit.is_alive and not front_alien_unit.is_alive:
+			break # Both died, next iteration will confirm no pair
+		if not front_player_unit.is_alive or not front_alien_unit.is_alive:
+			pass # One died, next iteration will find new opponent or end
+
+	return combat_this_lane
+
+func _handle_alien_pass_through(alien_creature: Creature, reason: String):
+	if not is_instance_valid(alien_creature): return
 	
-	# Check game state after death (e.g., if all aliens died)
-	# This might be redundant if process_combat already calls it.
-	if not (creature is Human and human_population <=0): # Avoid double game over call
-		check_game_state_after_combat()
-
-
-func undead_died_with_finality_remaining(undead_creature: Undead) -> void:
-	# This undead "died" but has finality, so it effectively "resets" or "respawns"
-	# It's removed from grid by its own die() method's call to handle_creature_death
-	# then re-added here.
-	print("%s respawns due to finality counter %d" % [undead_creature.get_class(), undead_creature.finality_counter])
-	undead_creature.current_health = undead_creature.max_health # Restore health
+	var damage_to_civilians = alien_creature.attack_power * 5 # Example: Alien Lvl (attack_power) * multiplier
+	# print_debug("Alien %s (%s) passed through! Deals %d damage to civilian population." % [alien_creature.creature_name, reason, damage_to_civilians])
+	_set_human_civilian_population(human_civilian_population - damage_to_civilians)
 	
-	# Re-place it on the grid. It will try to find a spot like a new unit.
-	if not spawn_creature_with_logic(undead_creature):
-		print("Failed to respawn undead with finality: ", undead_creature.get_class())
-		# If it can't be placed back, it's effectively lost for now.
-		# Or, you might want to queue_free it and remove from living_undead.
-		living_undead.erase(undead_creature)
-		undead_creature.queue_free()
+	# Alien is considered gone after passing through (for mid-battle pass)
+	# For end-of-turn pass, they are also removed after dealing damage.
+	# The calling function should handle removing it from lists/grid if this function doesn't.
+	# For now, let this be logged, actual removal by _remove_creature_from_game.
 
+# --- UTILITY / GETTER METHODS for other scripts ---
+func get_available_corpses() -> Array[CorpseData]:
+	return available_corpses # Returns a reference, be careful if modifying externally
 
-func undead_permanently_died(undead_creature: Undead) -> void:
-	# This is called when finality_counter reaches 0.
-	# Its removal from grid and living_undead list is handled by handle_creature_death.
-	print("%s permanently destroyed (finality exhausted)." % undead_creature.get_class())
-	# No re-adding to dead_creatures_for_reanimation.
-	# The creature's queue_free is typically handled in its Creature.die() or Undead.die()
+func get_all_living_humans_and_aliens() -> Array[Creature]:
+	var combined_list: Array[Creature] = []
+	combined_list.append_array(living_humans_on_grid)
+	combined_list.append_array(living_aliens_on_grid)
+	# Filter out any invalid instances just in case, though lists should be clean
+	return combined_list.filter(func(c): return is_instance_valid(c) and c.is_alive)
 
-func reanimate_creature_from_data(dead_creature_info_from_signal: Dictionary, undead_type_string: String, necromancer_level: int) -> void:
-	var found_and_removed = false
-	for i in range(dead_creatures_for_reanimation.size() -1, -1, -1):
-		if dead_creatures_for_reanimation[i] == dead_creature_info_from_signal: # Comparing dictionary instances
-			dead_creatures_for_reanimation.remove_at(i)
-			found_and_removed = true
-			break
+func get_player_undead_roster() -> Array[Creature]:
+	return player_undead_roster
+
+# --- PLAYER ACTIONS (called by UI or Input Handler) ---
+func player_deploys_undead_from_roster(undead_in_roster: Creature, target_grid_pos: Vector2i) -> bool:
+	if current_game_phase != GamePhase.PLAYER_PRE_BATTLE:
+		# print_debug("Cannot deploy Undead outside of Pre-Battle phase.")
+		return false
+	if not is_instance_valid(undead_in_roster) or not player_undead_roster.has(undead_in_roster):
+		# print_debug("Invalid Undead or not in roster.")
+		return false
 	
-	if not found_and_removed:
-		# Fallback: try to find by position if direct dict comparison fails (it often does for new dicts)
-		var dead_pos = dead_creature_info_from_signal.get("position", Vector2.ONE * -1)
-		if dead_pos != Vector2.ONE * -1:
-			for i in range(dead_creatures_for_reanimation.size() -1, -1, -1):
-				if dead_creatures_for_reanimation[i].position == dead_pos: # Check pos
-					dead_creature_info_from_signal = dead_creatures_for_reanimation[i] # Use the stored one
-					dead_creatures_for_reanimation.remove_at(i)
-					found_and_removed = true
-					break
+	# Check speed placement rules (GDD: SLOW=R1, NORMAL=R1/R2, FAST=R1/R2/R3 for player)
+	var player_rows_y = [
+		battle_grid_node.get_player_row_y_by_faction_row_num(1), # Player R1 (y=0)
+		battle_grid_node.get_player_row_y_by_faction_row_num(2), # Player R2 (y=1)
+		battle_grid_node.get_player_row_y_by_faction_row_num(3)  # Player R3 (y=2)
+	]
+	var allowed_rows_for_speed: Array[int] = []
+	match undead_in_roster.speed_type:
+		Creature.SpeedType.SLOW:
+			allowed_rows_for_speed = [player_rows_y[0]]
+		Creature.SpeedType.NORMAL:
+			allowed_rows_for_speed = [player_rows_y[0], player_rows_y[1]]
+		Creature.SpeedType.FAST:
+			allowed_rows_for_speed = player_rows_y
 	
-	if not found_and_removed:
-		print("Error: Dead creature data for reanimation not found or already used.")
-		# Potentially refund DE to necromancer here
-		return
+	if not target_grid_pos.y in allowed_rows_for_speed:
+		# print_debug("Cannot place %s (Speed: %s) at row %d. Not allowed." % [undead_in_roster.creature_name, Creature.SpeedType.keys()[undead_in_roster.speed_type], target_grid_pos.y])
+		return false
 
-	# TODO: Remove the clickable "CorpseNode" from the battle_grid
-
-	var original_creature_node : Creature = dead_creature_info_from_signal.original_creature_node_for_stats
-
-	var new_undead = Undead.create_from_creature(
-		original_creature_node, # Pass the creature *instance* or a data structure of its relevant stats
-		undead_type_string,
-		necromancer_level
-	)
-	new_undead.name = undead_type_string + str(living_undead.size() + 1)
-
-	if spawn_creature_with_logic(new_undead):
-		print("Successfully reanimated %s as %s." % [original_creature_node.get_class(), undead_type_string])
-		# Original creature node that died should have been queue_freed already
-		# if not, and original_creature_node was just a data carrier, ensure it's cleaned up if needed.
+	if battle_grid_node.place_creature_at(undead_in_roster, target_grid_pos):
+		_add_creature_to_active_lists(undead_in_roster) # Will remove from roster, add to living_undead_on_grid
+		undead_in_roster.position = battle_grid_node.get_world_position_for_grid_cell_center(target_grid_pos)
+		# print_debug("Deployed %s from roster to %s" % [undead_in_roster.creature_name, str(target_grid_pos)])
+		return true
 	else:
-		print("Failed to place reanimated %s." % undead_type_string)
-		# Re-add to dead_creatures_for_reanimation if placement fails? Or DE refunded by Necromancer?
-		# For now, if placement fails, it's lost.
-		# dead_creatures_for_reanimation.append(dead_creature_info_from_signal) # Option: allow retry
+		# print_debug("Failed to deploy %s to %s (cell occupied or invalid)." % [undead_in_roster.creature_name, str(target_grid_pos)])
+		return false
 
-func game_over(player_won: bool) -> void:
-	is_wave_active = false
-	wave_timer.stop()
-	if player_won:
-		print("CONGRATULATIONS! Earth is safe... for now.")
-		# Show win screen, etc.
-	else:
-		print("GAME OVER. The swarm has consumed Earth.")
-		# Show lose screen
+func player_returns_undead_to_roster(undead_on_grid: Creature) -> bool:
+	if current_game_phase != GamePhase.PLAYER_PRE_BATTLE:
+		# print_debug("Cannot return Undead to roster outside of Pre-Battle phase.")
+		return false
+	if not is_instance_valid(undead_on_grid) or not living_undead_on_grid.has(undead_on_grid):
+		# print_debug("Invalid Undead or not on grid.")
+		return false
+		
+	var original_pos = undead_on_grid.grid_pos
+	if battle_grid_node.remove_creature_from(original_pos) == undead_on_grid: # Ensure correct one removed
+		living_undead_on_grid.erase(undead_on_grid)
+		player_undead_roster.append(undead_on_grid)
+		emit_signal("undead_roster_changed", player_undead_roster)
+		undead_on_grid.grid_pos = Vector2i(-1,-1) # Mark as off-grid
+		# print_debug("Returned %s from %s to roster." % [undead_on_grid.creature_name, str(original_pos)])
+		return true
+	return false
+
+# Call this from your main Game scene or equivalent to set up critical references
+func late_initialize_references(necro_node: Necromancer, bg_node: BattleGrid, units_container: Node2D):
+	necromancer_node = necro_node
+	battle_grid_node = bg_node
+	units_container_node = units_container
 	
-	# get_tree().paused = true # Optional: pause game
-	# Or: get_tree().change_scene_to_file("res://game_over_screen.tscn")
-
-
-func get_creatures_in_lane(lane_idx: int) -> Array[Creature]:
-	var creatures_in_lane = []
-	for x in range(TOTAL_GRID_ROWS):
-		var creature = battle_grid.get_creature_at_coords(Vector2(lane_idx, x))
-		if creature != null:
-			creatures_in_lane.append(creature)
-	return creatures_in_lane
+	# Give BattleGrid a reference to this GameManager if it needs to call back (less common)
+	# battle_grid_node.assign_runtime_references(self)
+	
+	# print_debug("GameManager late_initialize_references complete.")

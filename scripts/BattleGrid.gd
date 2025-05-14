@@ -1,129 +1,256 @@
-# BattleGrid.gd
+# ./scripts/BattleGrid.gd
 extends Node2D
+class_name BattleGrid
 
-@onready var game_manager: GameManager = $"../GameManager"
+# Signals
+signal cell_occupied(grid_pos: Vector2i, creature: Creature)
+signal cell_vacated(grid_pos: Vector2i, creature_that_left: Creature) # creature can be null if simply cleared
 
-const CELL_SIZE = 64  # Adjust as needed for your visuals
-const GRID_COLUMNS = 8
-const GRID_ROWS = 6 # Total rows (3 for attackers, 3 for defenders)
+# --- CONFIGURATION ---
+const CELL_SIZE: int = 64  # Visual size of a cell in pixels
+const GRID_COLUMNS: int = 8
+const GRID_ROWS_PER_FACTION: int = 3
+const TOTAL_GRID_ROWS: int = GRID_ROWS_PER_FACTION * 2
 
-var grid_cells = []  # 2D array to track grid occupancy by creature nodes
-var visual_lines = [] # To store Line2D nodes for easy clearing/redrawing if needed
+# --- STATE ---
+# 2D array storing references to Creature nodes. null means empty.
+# Access via grid_cells[column][row]
+var grid_cells: Array = []
 
-func _ready() -> void:
-	initialize_grid()
-	draw_grid_lines()
+# For drawing grid lines (optional, mainly for debug/visuals)
+var visual_lines_container: Node2D # A child Node2D to hold Line2D nodes
 
-func initialize_grid() -> void:
+# --- REFERENCES ---
+# Path might need adjustment depending on your scene structure.
+# This assumes GameManager is a sibling to the node this BattleGrid script is on,
+# or at least reachable via this relative path from where Game.tscn might instantiate BattleGrid.
+# @onready var game_manager: GameManager = get_node_or_null("../GameManager") # Example path
+
+# It's often more robust for GameManager to set this reference on BattleGrid after instantiation.
+var game_manager # To be assigned by GameManager or a parent node.
+
+
+func _ready():
+	# Create a container for visual lines if it doesn't exist
+	visual_lines_container = Node2D.new()
+	visual_lines_container.name = "VisualLinesContainer"
+	add_child(visual_lines_container)
+
+	initialize_grid_data()
+	draw_grid_lines() # Initial draw
+
+# --- INITIALIZATION ---
+func initialize_grid_data():
 	grid_cells = []
-	for _x in range(GRID_COLUMNS):
-		var column = []
-		for _y in range(GRID_ROWS):
-			column.append(null)  # null means empty cell
-		grid_cells.append(column)
+	for _col in range(GRID_COLUMNS):
+		var column_array: Array = []
+		column_array.resize(TOTAL_GRID_ROWS) # Pre-size with nulls
+		# No need to fill with null explicitly if resize does it, but being clear:
+		for r in range(TOTAL_GRID_ROWS):
+			column_array[r] = null
+		grid_cells.append(column_array)
+	# print_debug("BattleGrid: Grid data initialized (%d cols x %d rows)." % [GRID_COLUMNS, TOTAL_GRID_ROWS])
 
-func draw_grid_lines() -> void:
-	# Clear previous lines if any
-	for line_node in visual_lines:
-		line_node.queue_free()
-	visual_lines.clear()
+func draw_grid_lines():
+	# Clear previous lines
+	for child in visual_lines_container.get_children():
+		child.queue_free()
 
+	var line_color = Color(0.3, 0.3, 0.3, 0.5) # A subdued color for grid lines
+
+	# Vertical lines
 	for x in range(GRID_COLUMNS + 1):
 		var line = Line2D.new()
 		line.add_point(Vector2(x * CELL_SIZE, 0))
-		line.add_point(Vector2(x * CELL_SIZE, GRID_ROWS * CELL_SIZE))
+		line.add_point(Vector2(x * CELL_SIZE, TOTAL_GRID_ROWS * CELL_SIZE))
 		line.width = 1.0
-		line.default_color = Color(0.3, 0.3, 0.3, 0.5) # Darker for less distraction
-		add_child(line)
-		visual_lines.append(line)
-	
-	for y in range(GRID_ROWS + 1):
+		line.default_color = line_color
+		visual_lines_container.add_child(line)
+
+	# Horizontal lines
+	for y in range(TOTAL_GRID_ROWS + 1):
 		var line = Line2D.new()
 		line.add_point(Vector2(0, y * CELL_SIZE))
 		line.add_point(Vector2(GRID_COLUMNS * CELL_SIZE, y * CELL_SIZE))
 		line.width = 1.0
-		line.default_color = Color(0.3, 0.3, 0.3, 0.5)
-		add_child(line)
-		visual_lines.append(line)
-
-	# Central dividing line (optional, for visual separation)
+		line.default_color = line_color
+		visual_lines_container.add_child(line)
+	
+	# Optional: A thicker line to divide player and alien sides
 	var mid_line = Line2D.new()
-	var mid_y = (GRID_ROWS / 2.0) * CELL_SIZE
+	var mid_y = GRID_ROWS_PER_FACTION * CELL_SIZE
 	mid_line.add_point(Vector2(0, mid_y))
 	mid_line.add_point(Vector2(GRID_COLUMNS * CELL_SIZE, mid_y))
-	mid_line.width = 2.0
-	mid_line.default_color = Color(0.6, 0.6, 0.6, 0.7)
-	add_child(mid_line)
-	visual_lines.append(mid_line)
+	mid_line.width = 2.0 # Thicker
+	mid_line.default_color = Color(0.5, 0.2, 0.2, 0.7) # A different color
+	visual_lines_container.add_child(mid_line)
 
 
-func world_to_grid_coords(world_pos: Vector2) -> Vector2:
+# --- GRID VALIDATION & COORDINATE UTILITIES ---
+func is_valid_grid_position(grid_pos: Vector2i) -> bool:
+	return (grid_pos.x >= 0 and grid_pos.x < GRID_COLUMNS and \
+			grid_pos.y >= 0 and grid_pos.y < TOTAL_GRID_ROWS)
+
+func get_world_position_for_grid_cell_center(grid_pos: Vector2i) -> Vector2:
+	if not is_valid_grid_position(grid_pos):
+		printerr("BattleGrid: Cannot get world position for invalid grid_pos: %s" % str(grid_pos))
+		return Vector2.ZERO # Or some other indicator of error
+
+	# Assumes this BattleGrid Node2D is at the origin (0,0) of the grid space.
+	# If BattleGrid itself is offset, its own global_position needs to be considered.
+	return Vector2(grid_pos.x * CELL_SIZE + CELL_SIZE / 2.0, \
+				   grid_pos.y * CELL_SIZE + CELL_SIZE / 2.0)
+
+func get_grid_position_from_world_position(world_pos: Vector2) -> Vector2i:
+	# This converts a world position (e.g., mouse click) to a grid cell.
+	# Assumes this BattleGrid Node2D is at the origin (0,0) of the grid space.
 	var grid_x = floor(world_pos.x / CELL_SIZE)
 	var grid_y = floor(world_pos.y / CELL_SIZE)
-	return Vector2(grid_x, grid_y)
+	return Vector2i(int(grid_x), int(grid_y))
 
-func grid_coords_to_world_center(grid_coords: Vector2) -> Vector2:
-	var world_x = grid_coords.x * CELL_SIZE + CELL_SIZE / 2.0
-	var world_y = grid_coords.y * CELL_SIZE + CELL_SIZE / 2.0
-	return Vector2(world_x, world_y)
-
-func is_valid_grid_coords(grid_coords: Vector2) -> bool:
-	return (grid_coords.x >= 0 and grid_coords.x < GRID_COLUMNS and
-			grid_coords.y >= 0 and grid_coords.y < GRID_ROWS)
-
-func place_creature_at_coords(creature: Creature, grid_coords: Vector2) -> bool:
-	if not is_valid_grid_coords(grid_coords):
-		printerr("Attempted to place creature out of bounds: ", grid_coords)
+# --- CREATURE PLACEMENT & QUERYING ---
+func place_creature_at(creature: Creature, grid_pos: Vector2i) -> bool:
+	if not is_instance_valid(creature):
+		printerr("BattleGrid: Attempted to place an invalid creature instance.")
 		return false
+	if not is_valid_grid_position(grid_pos):
+		printerr("BattleGrid: Cannot place creature. Invalid grid_pos: %s" % str(grid_pos))
+		return false
+	if grid_cells[grid_pos.x][grid_pos.y] != null:
+		printerr("BattleGrid: Cannot place creature. Cell %s is already occupied by %s." % [str(grid_pos), grid_cells[grid_pos.x][grid_pos.y].creature_name])
+		return false
+
+	grid_cells[grid_pos.x][grid_pos.y] = creature
+	creature.grid_pos = grid_pos # Update creature's own knowledge of its position
 	
-	if grid_cells[int(grid_coords.x)][int(grid_coords.y)] != null:
-		printerr("Attempted to place creature in occupied cell: ", grid_coords)
-		return false # Cell already occupied
-	
-	grid_cells[int(grid_coords.x)][int(grid_coords.y)] = creature
-	creature.position = grid_coords_to_world_center(grid_coords)
-	creature.lane = int(grid_coords.x)
-	creature.row = int(grid_coords.y)
-	
-	# Ensure the creature is a child of a scene that can render it (e.g., GameManager or a specific layer)
-	# If creature is not already in scene, you might need: add_child(creature) or get_parent().add_child(creature)
-	# This script (BattleGrid) is likely for logic, visual nodes are added elsewhere.
+	# Optional: If creature nodes are children of BattleGrid, set their visual position
+	# creature.position = get_world_position_for_grid_cell_center(grid_pos)
+	# However, it's often better if creatures are managed by a separate "UnitsContainer" node
+	# and GameManager tells BattleGrid about logical placements.
+
+	emit_signal("cell_occupied", grid_pos, creature)
+	# print_debug("BattleGrid: Placed %s at %s" % [creature.creature_name, str(grid_pos)])
 	return true
 
-func remove_creature_from_coords(grid_coords: Vector2) -> Creature:
-	if not is_valid_grid_coords(grid_coords):
-		printerr("Attempted to remove creature from out-of-bounds coords: ", grid_coords)
+func get_creature_at(grid_pos: Vector2i) -> Creature:
+	if not is_valid_grid_position(grid_pos):
+		return null
+	return grid_cells[grid_pos.x][grid_pos.y] # Can be null if empty
+
+func is_cell_occupied(grid_pos: Vector2i) -> bool:
+	if not is_valid_grid_position(grid_pos):
+		return true # Treat out-of-bounds as "occupied" to prevent placement
+	return grid_cells[grid_pos.x][grid_pos.y] != null
+
+func remove_creature_from(grid_pos: Vector2i) -> Creature:
+	if not is_valid_grid_position(grid_pos):
+		printerr("BattleGrid: Cannot remove creature. Invalid grid_pos: %s" % str(grid_pos))
 		return null
 	
-	var creature = grid_cells[int(grid_coords.x)][int(grid_coords.y)]
-	grid_cells[int(grid_coords.x)][int(grid_coords.y)] = null
-	return creature
-
-func get_creature_at_coords(grid_coords: Vector2) -> Creature:
-	if not is_valid_grid_coords(grid_coords):
+	var creature_that_was_there: Creature = grid_cells[grid_pos.x][grid_pos.y]
+	if is_instance_valid(creature_that_was_there):
+		grid_cells[grid_pos.x][grid_pos.y] = null
+		# creature_that_was_there.grid_pos = Vector2i(-1, -1) # Invalidate creature's old pos
+		emit_signal("cell_vacated", grid_pos, creature_that_was_there)
+		# print_debug("BattleGrid: Removed %s from %s" % [creature_that_was_there.creature_name, str(grid_pos)])
+		return creature_that_was_there
+	else:
+		# print_debug("BattleGrid: No creature to remove at %s (cell was already empty)." % str(grid_pos))
+		grid_cells[grid_pos.x][grid_pos.y] = null # Ensure it's null
+		emit_signal("cell_vacated", grid_pos, null) # Signal that cell is clear
 		return null
-	return grid_cells[int(grid_coords.x)][int(grid_coords.y)]
 
-func is_cell_empty(grid_coords: Vector2) -> bool:
-	if not is_valid_grid_coords(grid_coords):
-		return false # Out of bounds cells are effectively not empty for placement
-	return grid_cells[int(grid_coords.x)][int(grid_coords.y)] == null
+func clear_cell(grid_pos: Vector2i):
+	"""Ensures a cell is marked as empty, without returning the creature."""
+	if is_valid_grid_position(grid_pos):
+		if grid_cells[grid_pos.x][grid_pos.y] != null:
+			var creature_ref = grid_cells[grid_pos.x][grid_pos.y]
+			grid_cells[grid_pos.x][grid_pos.y] = null
+			emit_signal("cell_vacated", grid_pos, creature_ref) # Pass ref if it existed
+		else: # If already null, still signal it's clear if that's useful
+			emit_signal("cell_vacated", grid_pos, null)
 
-# This input function needs to be adapted for selecting a specific dead creature body
-# For now, it still uses grid position as a placeholder for targeting reanimation.
-func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var grid_pos = world_to_grid_coords(event.position) # Use event.global_position if this node is scaled/rotated
-		if is_valid_grid_coords(grid_pos):
-			if game_manager:
-				# IDEALLY: Find a dead creature visual node at event.position
-				# and pass its associated data.
-				# PLACEHOLDER: Using grid_pos to find a dead creature in GameManager
-				var dead_creature_found_at_pos = false
-				for dead_info in game_manager.dead_creatures_for_reanimation:
-					if dead_info.position == grid_pos:
-						game_manager.emit_signal("request_reanimate", dead_info) # Pass the whole dead_info
-						dead_creature_found_at_pos = true
-						break
-				if not dead_creature_found_at_pos:
-					print_debug("No reanimatable body selected at: ", grid_pos)
+
+# --- ROW/COLUMN UTILITIES ---
+func get_player_rows_indices() -> Array[int]:
+	return [0, 1, 2] # Player Row 1, 2, 3
+
+func get_alien_rows_indices() -> Array[int]:
+	return [3, 4, 5] # Alien Row 3, 2, 1 (from their perspective, closest to player is row index 3)
+	# Or more dynamically:
+	# var alien_rows = []
+	# for i in range(GRID_ROWS_PER_FACTION):
+	#     alien_rows.append(GRID_ROWS_PER_FACTION + i) # Rows 3, 4, 5
+	# return alien_rows
+
+
+func get_creatures_in_row(row_index: int) -> Array[Creature]:
+	var creatures_in_row: Array[Creature] = []
+	if row_index < 0 or row_index >= TOTAL_GRID_ROWS:
+		printerr("BattleGrid: Invalid row_index %d for get_creatures_in_row." % row_index)
+		return creatures_in_row
+		
+	for col_index in range(GRID_COLUMNS):
+		var creature = grid_cells[col_index][row_index]
+		if is_instance_valid(creature):
+			creatures_in_row.append(creature)
+	return creatures_in_row
+
+func get_creatures_in_column(col_index: int) -> Array[Creature]:
+	var creatures_in_col: Array[Creature] = []
+	if col_index < 0 or col_index >= GRID_COLUMNS:
+		printerr("BattleGrid: Invalid col_index %d for get_creatures_in_column." % col_index)
+		return creatures_in_col
+
+	for row_index in range(TOTAL_GRID_ROWS):
+		var creature = grid_cells[col_index][row_index]
+		if is_instance_valid(creature):
+			creatures_in_col.append(creature)
+	return creatures_in_col
+
+func find_first_empty_cell_in_row(row_index: int, start_col: int = 0, end_col: int = -1, step: int = 1) -> Vector2i:
+	""" Finds the first empty cell in a specified row, searching columns left-to-right by default. """
+	if row_index < 0 or row_index >= TOTAL_GRID_ROWS:
+		return Vector2i(-1, -1) # Invalid row
+
+	if end_col == -1: # Default to last column
+		end_col = GRID_COLUMNS -1
+
+	# Ensure start_col and end_col are within bounds
+	start_col = clamp(start_col, 0, GRID_COLUMNS - 1)
+	end_col = clamp(end_col, 0, GRID_COLUMNS - 1)
+
+	if step > 0: # Searching left to right (or increasing index)
+		for c in range(start_col, end_col + 1, step):
+			if not is_cell_occupied(Vector2i(c, row_index)):
+				return Vector2i(c, row_index)
+	elif step < 0: # Searching right to left (or decreasing index)
+		for c in range(start_col, end_col -1, step): # end_col -1 because range goes up to but not including
+			if not is_cell_occupied(Vector2i(c, row_index)):
+				return Vector2i(c, row_index)
+	
+	return Vector2i(-1, -1) # No empty cell found
+
+# --- FACTION-SPECIFIC ROW UTILITIES (based on GDD) ---
+# Player Row 1 is at y=0, Player Row 3 is at y=2
+# Alien Row 1 is at y=5 (TOTAL_GRID_ROWS-1), Alien Row 3 is at y=3 (TOTAL_GRID_ROWS - GRID_ROWS_PER_FACTION)
+
+func get_player_row_y_by_faction_row_num(player_row_num: int) -> int:
+	""" Converts player's perspective row number (1, 2, or 3) to actual grid y-coordinate. """
+	match player_row_num:
+		1: return 0 # Player's "Row 1" (bottom-most)
+		2: return 1 # Player's "Row 2"
+		3: return 2 # Player's "Row 3" (front-most for player)
+		_: return -1 # Invalid player row number
+
+func get_alien_row_y_by_faction_row_num(alien_row_num: int) -> int:
+	""" Converts alien's perspective row number (1, 2, or 3) to actual grid y-coordinate. """
+	match alien_row_num:
+		1: return TOTAL_GRID_ROWS - 1 # Alien's "Row 1" (top-most, y=5)
+		2: return TOTAL_GRID_ROWS - 2 # Alien's "Row 2" (y=4)
+		3: return TOTAL_GRID_ROWS - 3 # Alien's "Row 3" (front-most for alien, y=3)
+		_: return -1 # Invalid alien row number
+
+# Call this to assign essential references if not done via @onready or scene setup.
+func assign_runtime_references(gm: Node):
+	game_manager = gm

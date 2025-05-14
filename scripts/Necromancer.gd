@@ -1,183 +1,170 @@
-# Necromancer.gd
-extends Node # Or whatever base node you use for the Necromancer actor/manager
+# ./scripts/Necromancer.gd
+extends Node
+class_name Necromancer
 
-# UI Connections (ensure these paths are correct in your scene)
-@onready var level_label: Label = $"../UI/Level" # Example path
-@onready var max_de_label: Label = $"../UI/MaxDarkEnergy"
-@onready var current_de_label: Label = $"../UI/DarkEnergy"
-@onready var mastery_label: Label = $"../UI/MasteryPoints"
-@onready var reanimate_button: Button = $"../UI/Reanimate"
-@onready var soul_drain_button: Button = $"../UI/SoulDrain"
-@onready var reanimate_upgrade_button: Button = $"../UI/ReanimateUpgrade"
-@onready var soul_drain_upgrade_button: Button = $"../UI/SoulDrainUpgrade"
-# Add reference to the ReanimateTypeButton if it's part of Necromancer's direct UI control
-@onready var reanimate_type_button: Button = $"../UI/ReanimateType" # Example path
-@onready var game_manager: GameManager = $"../GameManager"
+# Signals
+signal de_changed(current_de: int, max_de: int)
+signal level_changed(new_level: int)
+signal spell_learned(spell_data: SpellData)
+signal spell_upgraded(spell_data: SpellData)
+signal spell_cast_failed(spell_name: String, reason: String)
+signal spell_cast_succeeded(spell_name: String)
+
+# --- CORE ATTRIBUTES ---
+@export var level: int = 1 : set = _set_level
+@export var current_de: int = 50 : set = _set_current_de
+@export var max_de: int = 50 : set = _set_max_de
+
+# --- SPELLBOOK ---
+# An array to store instances of SpellData resources that the Necromancer knows.
+var known_spells: Array[SpellData] = []
+
+# --- REFERENCES (Assign in _ready or via direct assignment from GameManager) ---
+# GameManager will likely create/manage the Necromancer instance.
+var game_manager # GameManager instance
+var battle_grid  # BattleGrid instance
+# @onready var game_manager = get_tree().get_root().find_child("GameManagerNodeName", true, false) # Example
 
 
-var level: int = 1
-var max_base_de: int = 10 # Initial DE
-var max_bonus_de: int = 0
-var max_de: int = 10
-var current_de: int = 10
-var mastery_points: int = 0 # Renamed from 'mastery' for clarity
-
-var spells: Dictionary = {} # Using Dictionary directly
-
-func _ready() -> void:
-	spells[Spell.SpellType.REANIMATE] = SpellReanimate.new()
-	spells[Spell.SpellType.SOUL_DRAIN] = SpellSoulDrain.new()
-
-	# Connect UI signals if they are children of this node or set up in editor
-	if is_instance_valid(reanimate_button):
-		reanimate_button.connect("pressed", Callable(self, "_on_reanimate_button_pressed"))
-	# ... connect other buttons similarly ...
-	if is_instance_valid(reanimate_type_button):
-		# The SpellReanimate instance itself should handle its type button
-		var reanimate_spell = spells[Spell.SpellType.REANIMATE] as SpellReanimate
-		if reanimate_spell:
-			reanimate_spell.assign_type_button(reanimate_type_button)
-
-	# GameManager reference for spell effects, ensure path is correct or use Autoload
-	if not game_manager:
-		printerr("Necromancer: GameManager not found!")
-
-	_update_de_calculation() # Initial calculation
-	current_de = max_de
-	_update_ui()
-
-func _update_de_calculation() -> void:
-	max_base_de = int(round(sqrt(2.0 * level) * 5.0) + 10) # Adjusted formula for more DE
-	max_de = max_base_de + max_bonus_de
-
-func _update_ui() -> void:
-	if is_instance_valid(level_label): level_label.text = "Level: %d" % level
-	if is_instance_valid(current_de_label): current_de_label.text = "DE: %d" % current_de
-	if is_instance_valid(max_de_label): max_de_label.text = "Max DE: %d" % max_de
-	if is_instance_valid(mastery_label): mastery_label.text = "MP: %d" % mastery_points
-
-	var reanimate_spell = spells.get(Spell.SpellType.REANIMATE)
-	var soul_drain_spell = spells.get(Spell.SpellType.SOUL_DRAIN)
-
-	if reanimate_spell and is_instance_valid(reanimate_button):
-		var cost = reanimate_spell.get_de_cost()
-		reanimate_button.text = "REANIMATE L%d (%d DE)" % [reanimate_spell.level, cost]
-		reanimate_button.disabled = current_de < cost
+func _ready():
+	# Initial signal emissions if values are set via @export
+	emit_signal("level_changed", level)
+	emit_signal("de_changed", current_de, max_de)
 	
-	if soul_drain_spell and is_instance_valid(soul_drain_button):
-		var cost = soul_drain_spell.get_de_cost()
-		soul_drain_button.text = "SOUL DRAIN L%d (%d DE)" % [soul_drain_spell.level, cost]
-		soul_drain_button.disabled = current_de < cost
+	# TODO: Load known spells if implementing a save/load system.
+	# For now, spells can be added programmatically.
+	# Example: learn_spell(load("res://scripts/spells/SpellReanimateData.tres").duplicate())
+	# Ensure to .duplicate() if loading from .tres to avoid modifying the base resource directly
+	# if multiple Necromancers could exist or if spells are modified per instance.
 
-	if reanimate_spell and is_instance_valid(reanimate_upgrade_button):
-		var cost = reanimate_spell.get_mastery_cost()
-		reanimate_upgrade_button.text = "Upgrade (%d MP)" % cost
-		reanimate_upgrade_button.disabled = mastery_points < cost
-	
-	if soul_drain_spell and is_instance_valid(soul_drain_upgrade_button):
-		var cost = soul_drain_spell.get_mastery_cost()
-		soul_drain_upgrade_button.text = "Upgrade (%d MP)" % cost
-		soul_drain_upgrade_button.disabled = mastery_points < cost
-	
-	# Update reanimate type button text (handled by SpellReanimate instance)
-	var r_spell = spells.get(Spell.SpellType.REANIMATE) as SpellReanimate
-	if r_spell:
-		r_spell.update_type_button_text_if_assigned()
+# --- SETTERS ---
+func _set_level(value: int):
+	var old_level = level
+	level = max(1, value) # Level cannot be less than 1
+	if old_level != level:
+		# GDD: Leveling up only changes max stats. Current DE remains.
+		# Max DE scaling and other benefits of leveling up should be handled here or by GameManager.
+		# Example: _set_max_de(calculate_max_de_for_level(level))
+		emit_signal("level_changed", level)
+		# print_debug("Necromancer leveled up to %d" % level)
 
+func _set_current_de(value: int):
+	var old_de = current_de
+	current_de = clamp(value, 0, max_de)
+	if old_de != current_de:
+		emit_signal("de_changed", current_de, max_de)
 
-func _on_turn_started(_turn_number: int) -> void:
-	current_de = max_de # Full DE replenish at start of turn
-	print_debug("Necromancer DE replenished to: ", current_de)
-	_update_ui()
+func _set_max_de(value: int):
+	var old_max_de = max_de
+	max_de = max(0, value) # Max DE shouldn't be negative
+	if old_max_de != max_de:
+		# If current DE exceeds new max DE (e.g., max DE reduced), clamp current DE.
+		if current_de > max_de:
+			_set_current_de(max_de) # Use setter to emit signal
+		else: # Only emit de_changed if current_de wasn't adjusted by the above line
+			emit_signal("de_changed", current_de, max_de)
 
-# This function is called by GameManager signal when player clicks on a reanimatable corpse
-func handle_reanimation_request(dead_creature_info: Dictionary) -> void:
-	print_debug("Necromancer received reanimation request for: ", dead_creature_info)
-	var spell = spells.get(Spell.SpellType.REANIMATE)
-	if spell:
-		var cost = spell.get_de_cost()
-		if current_de >= cost:
-			current_de -= cost
-			# The spell's do_effect will call GameManager.reanimate_creature_from_data
-			spell.do_effect(self, dead_creature_info) # Pass self (caster) and target data
-			# GameManager will handle the actual reanimation & placement
-		else:
-			_show_not_enough_de_popup("Reanimate")
-		_update_ui()
-	else:
-		push_error("Reanimate spell not found!")
+# --- DE MANAGEMENT ---
+func spend_de(amount: int) -> bool:
+	if amount <= 0:
+		return true # Spending 0 or negative DE is always "successful" without change
+	if current_de >= amount:
+		_set_current_de(current_de - amount)
+		return true
+	# print_debug("Necromancer: Not enough DE to spend %d. Has: %d" % [amount, current_de])
+	return false
 
-func cast_soul_drain_on_target(target_creature_instance: Creature) -> void: # Example if targeting needed
-	var spell = spells.get(Spell.SpellType.SOUL_DRAIN)
-	if spell:
-		var cost = spell.get_de_cost()
-		if current_de >= cost:
-			current_de -= cost
-			spell.do_effect(self, target_creature_instance) # Target is the creature instance
-		else:
-			_show_not_enough_de_popup("Soul Drain")
-		_update_ui()
-	else:
-		push_error("Soul Drain spell not found!")
-
-
-func _show_not_enough_de_popup(spell_name: String) -> void:
-	print_debug("Not enough DE to cast %s!" % spell_name)
-	# You could instance a small popup UI element here
-
-func _show_not_enough_mastery_popup() -> void:
-	print_debug("Not enough Mastery Points to upgrade!")
-
-# --- UI Button Handlers ---
-func _on_reanimate_button_pressed() -> void:
-	# This button might now just "prime" the reanimate spell,
-	# actual casting happens via handle_reanimation_request when a corpse is clicked.
-	# Or, if you want it to cast on a pre-selected corpse:
-	print("Reanimate button pressed. Select a corpse to reanimate.")
-	# For now, this button doesn't directly cast. The selection on grid triggers it.
-
-func _on_soul_drain_pressed() -> void:
-	# Soul Drain needs a target. How is it selected?
-	# For now, assume it's a global effect or needs specific targeting logic added.
-	print("Soul Drain pressed. Targeting logic TBD.")
-	# Example: cast_soul_drain_on_target(some_selected_target_creature)
-	# If it's an AoE or random target, call spell.do_effect(self, null)
-	var spell = spells.get(Spell.SpellType.SOUL_DRAIN)
-	if spell:
-		var cost = spell.get_de_cost()
-		if current_de >= cost:
-			current_de -= cost
-			spell.do_effect(self, null) # No specific target from button, spell handles targeting
-		else:
-			_show_not_enough_de_popup("Soul Drain")
-		_update_ui()
-
-
-func _on_level_up_button_pressed() -> void: # Assuming you have a level up button
-	level += 1
-	mastery_points += 1 # Gain 1 MP per level up
-	_update_de_calculation()
-	current_de = max_de # Replenish DE on level up as a bonus
-	print_debug("Necromancer Leveled Up to %d! MP: %d, Max DE: %d" % [level, mastery_points, max_de])
-	_update_ui()
-
-func _on_reanimate_upgrade_pressed() -> void:
-	_attempt_spell_level_up(Spell.SpellType.REANIMATE)
-
-func _on_soul_drain_upgrade_pressed() -> void:
-	_attempt_spell_level_up(Spell.SpellType.SOUL_DRAIN)
-
-func _attempt_spell_level_up(spell_type: int) -> void:
-	var spell = spells.get(spell_type)
-	if spell == null:
-		push_error("Attempted to upgrade non-existent spell type: %d" % spell_type)
+func restore_de(amount: int):
+	if amount <= 0:
 		return
+	_set_current_de(current_de + amount)
+	# print_debug("Necromancer restored %d DE. Current DE: %d/%d" % [amount, current_de, max_de])
 
-	var cost = spell.get_mastery_cost()
-	if mastery_points >= cost:
-		mastery_points -= cost
-		spell.level_up()
-		print_debug("Spell %s upgraded to level %d." % [spell.get_class(), spell.level]) # Spell needs name
-		_update_ui()
+func replenish_de_to_max():
+	# print_debug("Necromancer DE replenished to max.")
+	_set_current_de(max_de)
+
+# --- SPELL MANAGEMENT ---
+func learn_spell(spell_resource: SpellData):
+	if not spell_resource is SpellData:
+		printerr("Necromancer: Attempted to learn an invalid spell resource.")
+		return
+		
+	# Prevent learning the exact same resource instance multiple times.
+	# If spells are identified by name and level, more complex logic is needed
+	# to handle learning a spell that's already known (e.g., for upgrading).
+	if not known_spells.has(spell_resource):
+		# IMPORTANT: Set runtime references on the spell resource instance
+		# This Necromancer instance is the caster.
+		spell_resource.set_runtime_references(self, game_manager, battle_grid)
+		
+		known_spells.append(spell_resource)
+		emit_signal("spell_learned", spell_resource)
+		# print_debug("Necromancer learned spell: %s (Lvl %d)" % [spell_resource.spell_name, spell_resource.spell_level])
 	else:
-		_show_not_enough_mastery_popup()
+		# print_debug("Necromancer already knows spell: %s" % spell_resource.spell_name)
+		pass
+
+func get_spell_by_name(spell_name_to_find: String) -> SpellData:
+	for spell in known_spells:
+		if spell.spell_name == spell_name_to_find:
+			return spell
+	return null
+
+func upgrade_spell_by_name(spell_name_to_upgrade: String) -> bool:
+	var spell_to_upgrade: SpellData = get_spell_by_name(spell_name_to_upgrade)
+	if is_instance_valid(spell_to_upgrade):
+		if spell_to_upgrade.upgrade_spell():
+			emit_signal("spell_upgraded", spell_to_upgrade)
+			# print_debug("Necromancer upgraded spell: %s to Lvl %d" % [spell_to_upgrade.spell_name, spell_to_upgrade.spell_level])
+			return true
+		else:
+			# print_debug("Necromancer: Spell %s is already at max level or upgrade failed." % spell_to_upgrade.spell_name)
+			return false
+	# print_debug("Necromancer: Cannot upgrade. Spell '%s' not found." % spell_name_to_upgrade)
+	return false
+
+# --- SPELL CASTING ---
+# This is the primary interface for the player/UI to cast a known spell.
+# `spell_to_cast` should be one of the SpellData instances from `known_spells`.
+# `target_data` can be a Creature, CorpseData, Vector2i, or null depending on the spell.
+func attempt_cast_spell(spell_to_cast: SpellData, target_data = null) -> bool:
+	if not is_instance_valid(spell_to_cast):
+		printerr("Necromancer: Invalid spell resource provided for casting.")
+		emit_signal("spell_cast_failed", "Unknown Spell", "Invalid spell resource.")
+		return false
+
+	if not known_spells.has(spell_to_cast):
+		printerr("Necromancer: Attempted to cast an unknown spell '%s'." % spell_to_cast.spell_name)
+		emit_signal("spell_cast_failed", spell_to_cast.spell_name, "Spell not known.")
+		return false
+
+	# Ensure runtime references are set on the spell (should be done when learned, but good to double check)
+	# This is critical because the SpellData resource itself doesn't know its caster context.
+	spell_to_cast.set_runtime_references(self, game_manager, battle_grid)
+
+	# Delegate actual casting logic to the spell resource itself
+	# The spell's can_cast method will check DE via caster.current_de (passed as argument)
+	# The spell's cast method will call caster.spend_de()
+	if spell_to_cast.cast(self, target_data): # Pass self as caster_node
+		emit_signal("spell_cast_succeeded", spell_to_cast.spell_name)
+		return true
+	else:
+		# The spell's can_cast or cast method should have printed/signaled specific failure reasons.
+		# print_debug("Necromancer: Failed to cast spell '%s'." % spell_to_cast.spell_name)
+		# Emitting a generic fail signal here, specific reasons might come from the spell itself if needed.
+		emit_signal("spell_cast_failed", spell_to_cast.spell_name, "Spell execution failed or conditions not met.")
+		return false
+
+# --- UTILITY ---
+# Example: How Max DE might scale with level.
+# func calculate_max_de_for_level(current_level: int) -> int:
+#    return 40 + (current_level * 10) # Base 50 at level 1, +10 per level
+
+# Call this to assign essential references if not done via @onready or scene setup.
+func assign_runtime_references(gm: Node, bg: Node):
+	game_manager = gm
+	battle_grid = bg
+	# After setting these, re-initialize runtime references for already known spells
+	for spell_res in known_spells:
+		spell_res.set_runtime_references(self, game_manager, battle_grid)
