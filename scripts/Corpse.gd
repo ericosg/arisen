@@ -40,12 +40,20 @@ func _init(data: Dictionary = {}):
 		
 		# Ensure faction is correctly assigned from enum value if data provides an int
 		var fact_val = data.get("original_faction", Creature.Faction.NONE)
-		if fact_val is int and Creature.Faction.has_value(fact_val):
-			original_faction = Creature.Faction.from_int(fact_val)
-		elif fact_val is Creature.Faction: # If already an enum
+		if fact_val is int:
+			var converted_faction = Creature.Faction.from_int(fact_val)
+			if converted_faction != null: # Check if the integer value was a valid Faction enum member
+				original_faction = converted_faction
+			else: # Integer value was not a valid Faction enum member
+				original_faction = Creature.Faction.NONE 
+				printerr("CorpseData: Invalid integer value '%d' provided for Faction enum. Defaulting to NONE." % fact_val)
+		elif fact_val is Creature.Faction: # If already an enum instance
 			original_faction = fact_val
-		else: # Default or error
+		else: # Default or if fact_val is some other unexpected type
 			original_faction = Creature.Faction.NONE
+			# Optionally print an error if the type was unexpected and not the default value itself
+			if fact_val != Creature.Faction.NONE: # Avoid erroring if default value was passed and was not int/enum
+				printerr("CorpseData: Unexpected type ('%s') for original_faction. Defaulting to NONE." % typeof(fact_val))
 
 		# For finality:
 		# If the dying creature was Undead, its 'current_finality_counter_on_death' is passed.
