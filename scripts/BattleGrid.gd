@@ -21,13 +21,8 @@ var grid_cells: Array = []
 var visual_lines_container: Node2D # A child Node2D to hold Line2D nodes
 
 # --- REFERENCES ---
-# Path might need adjustment depending on your scene structure.
-# This assumes GameManager is a sibling to the node this BattleGrid script is on,
-# or at least reachable via this relative path from where Game.tscn might instantiate BattleGrid.
-# @onready var game_manager: GameManager = get_node_or_null("../GameManager") # Example path
-
-# It's often more robust for GameManager to set this reference on BattleGrid after instantiation.
-var game_manager # To be assigned by GameManager or a parent node.
+# This will be assigned by GameManager or a parent node.
+var game_manager
 
 
 func _ready():
@@ -45,7 +40,6 @@ func initialize_grid_data():
 	for _col in range(GRID_COLUMNS):
 		var column_array: Array = []
 		column_array.resize(TOTAL_GRID_ROWS) # Pre-size with nulls
-		# No need to fill with null explicitly if resize does it, but being clear:
 		for r in range(TOTAL_GRID_ROWS):
 			column_array[r] = null
 		grid_cells.append(column_array)
@@ -78,7 +72,7 @@ func draw_grid_lines():
 	
 	# Optional: A thicker line to divide player and alien sides
 	var mid_line = Line2D.new()
-	var mid_y = GRID_ROWS_PER_FACTION * CELL_SIZE
+	var mid_y = GRID_ROWS_PER_FACTION * CELL_SIZE # This calculation remains correct for the visual middle
 	mid_line.add_point(Vector2(0, mid_y))
 	mid_line.add_point(Vector2(GRID_COLUMNS * CELL_SIZE, mid_y))
 	mid_line.width = 2.0 # Thicker
@@ -96,14 +90,13 @@ func get_world_position_for_grid_cell_center(grid_pos: Vector2i) -> Vector2:
 		printerr("BattleGrid: Cannot get world position for invalid grid_pos: %s" % str(grid_pos))
 		return Vector2.ZERO # Or some other indicator of error
 
-	# Assumes this BattleGrid Node2D is at the origin (0,0) of the grid space.
-	# If BattleGrid itself is offset, its own global_position needs to be considered.
+	# Assumes this BattleGrid Node2D's origin is the top-left of the grid.
+	# Creature.gd will use this to set its local position.
 	return Vector2(grid_pos.x * CELL_SIZE + CELL_SIZE / 2.0, \
 				   grid_pos.y * CELL_SIZE + CELL_SIZE / 2.0)
 
 func get_grid_position_from_world_position(world_pos: Vector2) -> Vector2i:
-	# This converts a world position (e.g., mouse click) to a grid cell.
-	# Assumes this BattleGrid Node2D is at the origin (0,0) of the grid space.
+	# This converts a world position (e.g., mouse click relative to BattleGrid's origin) to a grid cell.
 	var grid_x = floor(world_pos.x / CELL_SIZE)
 	var grid_y = floor(world_pos.y / CELL_SIZE)
 	return Vector2i(int(grid_x), int(grid_y))
@@ -123,11 +116,6 @@ func place_creature_at(creature: Creature, grid_pos: Vector2i) -> bool:
 	grid_cells[grid_pos.x][grid_pos.y] = creature
 	creature.grid_pos = grid_pos # Update creature's own knowledge of its position
 	
-	# Optional: If creature nodes are children of BattleGrid, set their visual position
-	# creature.position = get_world_position_for_grid_cell_center(grid_pos)
-	# However, it's often better if creatures are managed by a separate "UnitsContainer" node
-	# and GameManager tells BattleGrid about logical placements.
-
 	emit_signal("cell_occupied", grid_pos, creature)
 	# print_debug("BattleGrid: Placed %s at %s" % [creature.creature_name, str(grid_pos)])
 	return true
@@ -150,7 +138,7 @@ func remove_creature_from(grid_pos: Vector2i) -> Creature:
 	var creature_that_was_there: Creature = grid_cells[grid_pos.x][grid_pos.y]
 	if is_instance_valid(creature_that_was_there):
 		grid_cells[grid_pos.x][grid_pos.y] = null
-		# creature_that_was_there.grid_pos = Vector2i(-1, -1) # Invalidate creature's old pos
+		# creature_that_was_there.grid_pos = Vector2i(-1, -1) # Invalidate creature's old pos, Creature.gd setter handles this
 		emit_signal("cell_vacated", grid_pos, creature_that_was_there)
 		# print_debug("BattleGrid: Removed %s from %s" % [creature_that_was_there.creature_name, str(grid_pos)])
 		return creature_that_was_there
@@ -172,16 +160,21 @@ func clear_cell(grid_pos: Vector2i):
 
 
 # --- ROW/COLUMN UTILITIES ---
+# MODIFIED: Player rows are now at the bottom of the grid.
 func get_player_rows_indices() -> Array[int]:
-	return [0, 1, 2] # Player Row 1, 2, 3
+	# Player rows are now 3, 4, 5 (bottom half of a 0-5 grid)
+	var player_rows: Array[int] = []
+	for i in range(GRID_ROWS_PER_FACTION):
+		player_rows.append(GRID_ROWS_PER_FACTION + i) # Rows 3, 4, 5
+	return player_rows
 
+# MODIFIED: Alien rows are now at the top of the grid.
 func get_alien_rows_indices() -> Array[int]:
-	return [3, 4, 5] # Alien Row 3, 2, 1 (from their perspective, closest to player is row index 3)
-	# Or more dynamically:
-	# var alien_rows = []
-	# for i in range(GRID_ROWS_PER_FACTION):
-	#     alien_rows.append(GRID_ROWS_PER_FACTION + i) # Rows 3, 4, 5
-	# return alien_rows
+	# Alien rows are now 0, 1, 2 (top half of a 0-5 grid)
+	var alien_rows: Array[int] = []
+	for i in range(GRID_ROWS_PER_FACTION):
+		alien_rows.append(i) # Rows 0, 1, 2
+	return alien_rows
 
 
 func get_creatures_in_row(row_index: int) -> Array[Creature]:
@@ -225,31 +218,46 @@ func find_first_empty_cell_in_row(row_index: int, start_col: int = 0, end_col: i
 			if not is_cell_occupied(Vector2i(c, row_index)):
 				return Vector2i(c, row_index)
 	elif step < 0: # Searching right to left (or decreasing index)
-		for c in range(start_col, end_col -1, step): # end_col -1 because range goes up to but not including
+		# Adjust range for negative step to include end_col
+		for c in range(start_col, end_col - 1, step): # end_col -1 because range goes up to but not including
 			if not is_cell_occupied(Vector2i(c, row_index)):
 				return Vector2i(c, row_index)
 	
 	return Vector2i(-1, -1) # No empty cell found
 
-# --- FACTION-SPECIFIC ROW UTILITIES (based on GDD) ---
-# Player Row 1 is at y=0, Player Row 3 is at y=2
-# Alien Row 1 is at y=5 (TOTAL_GRID_ROWS-1), Alien Row 3 is at y=3 (TOTAL_GRID_ROWS - GRID_ROWS_PER_FACTION)
+# --- FACTION-SPECIFIC ROW UTILITIES ---
+# Player rows are now the bottom three (y=3, y=4, y=5).
+# Alien rows are now the top three (y=0, y=1, y=2).
+# Faction Row 1 is considered the row closest to their side of the screen (their "back line").
+# Faction Row 3 is considered the row closest to the center line (their "front line").
 
 func get_player_row_y_by_faction_row_num(player_row_num: int) -> int:
-	""" Converts player's perspective row number (1, 2, or 3) to actual grid y-coordinate. """
+	"""
+	Converts player's perspective row number (1, 2, or 3) to actual grid y-coordinate.
+	Player's "Row 1" (their back line) is at the bottom of the screen (y=5).
+	Player's "Row 3" (their front line) is closest to the middle (y=3).
+	"""
 	match player_row_num:
-		1: return 0 # Player's "Row 1" (bottom-most)
-		2: return 1 # Player's "Row 2"
-		3: return 2 # Player's "Row 3" (front-most for player)
-		_: return -1 # Invalid player row number
+		1: return TOTAL_GRID_ROWS - 1                     # Player's "Row 1" (y=5, bottom-most on screen)
+		2: return TOTAL_GRID_ROWS - 2                     # Player's "Row 2" (y=4)
+		3: return TOTAL_GRID_ROWS - GRID_ROWS_PER_FACTION # Player's "Row 3" (y=3, front-most for player)
+		_:
+			printerr("BattleGrid: Invalid player_row_num %d" % player_row_num)
+			return -1
 
 func get_alien_row_y_by_faction_row_num(alien_row_num: int) -> int:
-	""" Converts alien's perspective row number (1, 2, or 3) to actual grid y-coordinate. """
+	"""
+	Converts alien's perspective row number (1, 2, or 3) to actual grid y-coordinate.
+	Alien's "Row 1" (their back line) is at the top of the screen (y=0).
+	Alien's "Row 3" (their front line) is closest to the middle (y=2).
+	"""
 	match alien_row_num:
-		1: return TOTAL_GRID_ROWS - 1 # Alien's "Row 1" (top-most, y=5)
-		2: return TOTAL_GRID_ROWS - 2 # Alien's "Row 2" (y=4)
-		3: return TOTAL_GRID_ROWS - 3 # Alien's "Row 3" (front-most for alien, y=3)
-		_: return -1 # Invalid alien row number
+		1: return 0                                     # Alien's "Row 1" (y=0, top-most on screen)
+		2: return 1                                     # Alien's "Row 2" (y=1)
+		3: return GRID_ROWS_PER_FACTION - 1             # Alien's "Row 3" (y=2, front-most for alien)
+		_:
+			printerr("BattleGrid: Invalid alien_row_num %d" % alien_row_num)
+			return -1
 
 # Call this to assign essential references if not done via @onready or scene setup.
 func assign_runtime_references(gm: Node):
