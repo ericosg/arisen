@@ -268,11 +268,15 @@ func _update_stats_label_ui():
 	else:
 		stats_label.modulate = Color.WHITE
 
-	# MODIFICATION: Ensure right alignment and correct positioning
 	stats_label.set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT)
 	
-	# It's important to get the size *after* text and alignment are set
-	var label_size = stats_label.get_minimum_size() 
+	# MODIFICATION: Explicitly set the label's size to its minimum required size.
+	# This helps ensure that 'label_size' used for positioning is accurate after text changes.
+	var min_size = stats_label.get_minimum_size()
+	stats_label.size = min_size 
+
+	# Now use the label's actual size for positioning
+	var label_size = stats_label.size 
 	var cell_half_size = BattleGrid.CELL_SIZE / 2.0
 
 	# Position the label so its bottom-right corner is at the desired padded location.
@@ -329,27 +333,19 @@ func _update_ability_icons_ui():
 	else:
 		ability_icons_container.visible = true # Ensure visible if there are icons
 
-	# MODIFICATION: Calculate total width of HBoxContainer and position it
-	# Get the separation value from the theme (or default if not set)
-	# Note: HBoxContainer might take a frame to update its size after children are added.
-	# If direct calculation is off, a 'call_deferred' might be needed for positioning,
-	# or using the HBoxContainer's 'size' property after it has rearranged.
-	# For now, we calculate expected width.
-	var separation = ability_icons_container.get_theme_constant("separation", "HBoxContainer") # Default is 4
+	var separation = ability_icons_container.get_theme_constant("separation", "HBoxContainer")
 	
 	var container_width = (number_of_icons * UI_ICON_SIZE)
-	if number_of_icons > 1: # Add separation space only if there's more than one icon
+	if number_of_icons > 1: 
 		container_width += (number_of_icons - 1) * separation
 	
-	# Position the HBoxContainer so its top-right corner is at the cell's top-right with padding.
-	# The container's 'position' is its top-left corner.
 	ability_icons_container.position = Vector2(
-		(cell_half_size - UI_PADDING) - container_width, # X: (Cell_Right_Edge - Padding) - Container_Width
-		-cell_half_size + UI_PADDING                     # Y: Cell_Top_Edge + Padding
+		(cell_half_size - UI_PADDING) - container_width, 
+		-cell_half_size + UI_PADDING                     
 	)
 
 
 func _update_finality_label_ui():
 	if not is_instance_valid(finality_label): return
-	if finality_label.visible: # Only update text if it's meant to be seen (controlled by Undead.gd)
+	if finality_label.visible: 
 		finality_label.text = str(finality_counter)
