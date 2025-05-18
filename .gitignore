@@ -1,6 +1,24 @@
-# Godot 4+ specific ignores
-.godot/
+# Custom ignores
 /android/
 *.zip
 /build
-scripts/merged_code.txt
+
+# Godot 4+ specific ignores
+.godot/
+.nomedia
+
+# Godot-specific ignores
+.import/
+export.cfg
+export_credentials.cfg
+*.tmp
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono-specific ignores
+.mono/
+data_*/
+mono_crash.*.json
+directory_listing.txt
+project_code_and_scenes.txt
