@@ -45,9 +45,9 @@ var battle_grid: BattleGrid
 
 # --- UI ELEMENTS ---
 # Configuration for UI elements
-const UI_FONT_SIZE: int = 8
-const UI_PADDING: int = 1 # General padding from the edges of the 64x64 tile
-const UI_ICON_SIZE: int = 8
+const UI_FONT_SIZE: int = 12
+const UI_PADDING: int = 1
+const UI_ICON_SIZE: int = 16
 
 # Preload font (ensure this path is correct)
 const PIXEL_FONT_BOLD: Font = preload("res://assets/fonts/PixelOperator8-Bold.ttf")

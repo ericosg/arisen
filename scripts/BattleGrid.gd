@@ -7,7 +7,7 @@ signal cell_occupied(grid_pos: Vector2i, creature: Creature)
 signal cell_vacated(grid_pos: Vector2i, creature_that_left: Creature) # creature can be null if simply cleared
 
 # --- CONFIGURATION ---
-const CELL_SIZE: int = 64  # Visual size of a cell in pixels
+const CELL_SIZE: int = 128  # Visual size of a cell in pixels
 const GRID_COLUMNS: int = 8
 const GRID_ROWS_PER_FACTION: int = 3
 const TOTAL_GRID_ROWS: int = GRID_ROWS_PER_FACTION * 2
