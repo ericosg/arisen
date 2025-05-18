@@ -15,7 +15,7 @@ extends Node
 @onready var ui_dark_energy_label: Label = $UI/DarkEnergy
 @onready var ui_max_dark_energy_label: Label = $UI/MaxDarkEnergy
 @onready var ui_mastery_points_label: Label = $UI/MasteryPoints # For MP
-@onready var ui_log_label: Label = $UI/Log # For Game Log
+@onready var ui_log_label: RichTextLabel = $UI/Log # For Game Log
 
 @onready var ui_level_up_button: Button = $UI/LevelUp # Necromancer Level Up Button
 @onready var ui_reanimate_button: Button = $UI/Reanimate
@@ -53,7 +53,11 @@ func _ready():
 	if not is_instance_valid(necromancer_node): printerr("Game.gd: NecromancerNode missing."); get_tree().quit(); return
 	if not is_instance_valid(battle_grid_node): printerr("Game.gd: BattleGridNode missing."); get_tree().quit(); return
 	if not is_instance_valid(units_container_node): printerr("Game.gd: UnitsContainerNode missing."); get_tree().quit(); return
-	if not is_instance_valid(ui_log_label): printerr("Game.gd: UI/Log Label node missing for game log."); # Continue if log isn't critical
+	
+	if is_instance_valid(ui_log_label):
+		ui_log_label.bbcode_enabled = true # Enable BBCode for color parsing
+	else:
+		printerr("Game.gd: UI/Log Label node missing for game log.")
 
 	# Initialize references
 	game_manager_node.late_initialize_references(necromancer_node, battle_grid_node, units_container_node)
@@ -67,7 +71,7 @@ func _ready():
 	necromancer_node.learn_spell(soul_drain_spell_instance) 
 
 	_connect_game_signals()
-	_log_message("Game Initialized. Necromancer awaits...") # Initial log message
+	_log_message("Game Initialized. Necromancer awaits...", "white") 
 	game_manager_node.start_new_game() 
 	
 	if is_instance_valid(ui_game_over_panel):
@@ -84,25 +88,32 @@ func _connect_game_signals():
 		if is_instance_valid(ui_human_population_label): 
 			game_manager_node.human_population_changed.connect(_on_human_population_changed)
 		if is_instance_valid(ui_turn_wave_label): 
-			game_manager_node.turn_started.connect(_on_turn_or_wave_changed) # Logs turn start
-			game_manager_node.wave_started.connect(_on_wave_started_log) # Logs wave start
+			game_manager_node.turn_started.connect(_on_turn_or_wave_changed) 
+			game_manager_node.wave_started.connect(_on_wave_started_log) 
 		if is_instance_valid(ui_game_over_panel) and is_instance_valid(ui_game_over_status_label):
-			game_manager_node.game_over.connect(_on_game_over) # Logs game over
+			game_manager_node.game_over.connect(_on_game_over) 
 		
 		game_manager_node.player_phase_started.connect(_on_player_phase_started)
-		game_manager_node.battle_phase_started.connect(_on_battle_phase_started) # Logs battle start
-		game_manager_node.wave_ended.connect(_on_wave_ended_log) # Logs wave end
-		game_manager_node.turn_ended.connect(_on_turn_ended_log) # Logs turn end
+		game_manager_node.battle_phase_started.connect(_on_battle_phase_started) 
+		game_manager_node.wave_ended.connect(_on_wave_ended_log) 
+		game_manager_node.turn_ended.connect(_on_turn_ended_log) 
+		
+		# Connect to GameManager's new signal for detailed event logging
+		if game_manager_node.has_signal("game_event_log_requested"): # Check if signal exists
+			game_manager_node.game_event_log_requested.connect(_on_game_manager_event_logged)
+		else:
+			printerr("Game.gd: GameManagerNode is missing 'game_event_log_requested' signal.")
+
 
 	if is_instance_valid(necromancer_node):
 		necromancer_node.de_changed.connect(_on_de_changed)
 		necromancer_node.level_changed.connect(_on_level_changed) 
 		necromancer_node.mastery_points_changed.connect(_on_mastery_points_changed) 
-		necromancer_node.spell_upgraded.connect(_on_spell_upgraded) # Logs spell upgrade
+		necromancer_node.spell_upgraded.connect(_on_spell_upgraded) 
 		necromancer_node.spell_cast_failed.connect(_on_spell_cast_failed_ui_log) 
 		necromancer_node.spell_cast_succeeded.connect(_on_spell_cast_succeeded_ui_log)
 
-	if is_instance_valid(ui_level_up_button): ui_level_up_button.pressed.connect(_on_level_up_button_pressed) # Logs Necro level up
+	if is_instance_valid(ui_level_up_button): ui_level_up_button.pressed.connect(_on_level_up_button_pressed) 
 	if is_instance_valid(ui_reanimate_button): ui_reanimate_button.pressed.connect(_on_reanimate_button_pressed)
 	if is_instance_valid(ui_reanimate_type_button): ui_reanimate_type_button.pressed.connect(_on_reanimate_type_button_pressed)
 	if is_instance_valid(ui_soul_drain_button): ui_soul_drain_button.pressed.connect(_on_soul_drain_button_pressed)
@@ -112,30 +123,43 @@ func _connect_game_signals():
 	if is_instance_valid(ui_game_over_restart_button): ui_game_over_restart_button.pressed.connect(_on_restart_button_pressed)
 
 # --- Game Log Management ---
-func _log_message(message: String, is_error: bool = false):
-	var formatted_message = message
-	if is_error:
-		formatted_message = "ERROR: " + message
-		printerr("GAME LOG (Error): %s" % message) # Keep console error for debugging
-	else:
-		print("GAME LOG: %s" % message) # Keep console info for debugging
+func _log_message(message: String, color_name: String = "white"):
+	var bbcode_message = message
+	var final_color_name = color_name.to_lower()
 
-	game_log_messages.append(formatted_message)
+	# Ensure recognized colors, default to white
+	match final_color_name:
+		"green", "red", "yellow", "white":
+			bbcode_message = "[color=%s]%s[/color]" % [final_color_name, message]
+		_: # Unrecognized color string
+			bbcode_message = "[color=white]%s[/color]" % message # Default to white
+			# print_debug("Log: Unrecognized color '%s', defaulting to white for message: %s" % [color_name, message])
+	
+	# For console debugging, print the raw message without BBCode for readability
+	if final_color_name == "red" and not message.begins_with("ERROR:"): # Avoid double "ERROR:"
+		printerr("GAME LOG (UI: %s): %s" % [final_color_name, message])
+	else:
+		print("GAME LOG (UI: %s): %s" % [final_color_name, message])
+
+
+	game_log_messages.append(bbcode_message) # Store the BBCode formatted message
 	if game_log_messages.size() > MAX_LOG_LINES:
 		game_log_messages.pop_front() # Remove the oldest message
 
 	if is_instance_valid(ui_log_label):
 		ui_log_label.text = "\n".join(game_log_messages)
-	# else:
-		# print_debug("UI Log Label not found, message not displayed in UI: %s" % formatted_message)
+
+
+func _on_game_manager_event_logged(message: String, color_tag: String):
+	_log_message(message, color_tag)
 
 
 func _on_spell_cast_failed_ui_log(spell_name: String, reason: String):
-	_log_message("Cast %s failed: %s" % [spell_name, reason], true)
+	_log_message("Cast %s failed: %s" % [spell_name, reason], "red")
 	_update_all_spell_related_ui() 
 
 func _on_spell_cast_succeeded_ui_log(spell_name: String):
-	_log_message("%s cast successfully." % spell_name)
+	_log_message("%s cast successfully." % spell_name, "white") # Or green if preferred for success
 	_update_all_spell_related_ui() 
 
 
@@ -143,8 +167,8 @@ func _on_spell_cast_succeeded_ui_log(spell_name: String):
 func _update_necromancer_labels_from_node():
 	if not is_instance_valid(necromancer_node): return
 	if is_instance_valid(ui_level_label): ui_level_label.text = "Lvl: %d" % necromancer_node.level
-	if is_instance_valid(ui_dark_energy_label): ui_dark_energy_label.text = "DE: %d" % necromancer_node.current_de # Changed
-	if is_instance_valid(ui_max_dark_energy_label): ui_max_dark_energy_label.text = "Max DE: %d" % necromancer_node.max_de # Changed
+	if is_instance_valid(ui_dark_energy_label): ui_dark_energy_label.text = "DE: %d" % necromancer_node.current_de 
+	if is_instance_valid(ui_max_dark_energy_label): ui_max_dark_energy_label.text = "Max DE: %d" % necromancer_node.max_de 
 	if is_instance_valid(ui_mastery_points_label): ui_mastery_points_label.text = "MP: %d" % necromancer_node.mastery_points
 
 func _update_all_spell_related_ui():
@@ -218,31 +242,31 @@ func _update_all_spell_related_ui():
 func _on_human_population_changed(new_population: int):
 	if is_instance_valid(ui_human_population_label):
 		ui_human_population_label.text = "Humans: %d" % new_population
-	_log_message("Human population changed to: %d" % new_population)
+	_log_message("Human population changed to: %d" % new_population, "white")
 
 
 func _on_de_changed(_current_de: int, _max_de: int): 
-	_update_necromancer_labels_from_node() # Update all necro labels
+	_update_necromancer_labels_from_node() 
 	_update_all_spell_related_ui() 
 
 func _on_level_changed(new_level: int): # Necromancer level
-	_update_necromancer_labels_from_node() # Update all necro labels
+	_update_necromancer_labels_from_node() 
 	_update_all_spell_related_ui() 
 
 func _on_mastery_points_changed(new_mastery_points: int):
-	_update_necromancer_labels_from_node() # Update all necro labels
+	_update_necromancer_labels_from_node() 
 	_update_all_spell_related_ui() 
 
 func _on_turn_or_wave_changed(turn_number: int): 
 	if is_instance_valid(ui_turn_wave_label) and is_instance_valid(game_manager_node):
 		ui_turn_wave_label.text = "Turn: %d | Wave: %d" % [game_manager_node.current_turn, game_manager_node.current_wave_in_turn]
-	_log_message("Turn %d started." % turn_number)
+	_log_message("Turn %d started." % turn_number, "white")
 	_update_proceed_button_text()
 	_update_all_spell_related_ui() 
 
 func _on_wave_started_log(wave_number: int, turn_number: int):
-	_log_message("Wave %d of Turn %d begins." % [wave_number, turn_number])
-	if is_instance_valid(ui_turn_wave_label) and is_instance_valid(game_manager_node): # Also update label here
+	_log_message("Wave %d of Turn %d begins." % [wave_number, turn_number], "white")
+	if is_instance_valid(ui_turn_wave_label) and is_instance_valid(game_manager_node): 
 		ui_turn_wave_label.text = "Turn: %d | Wave: %d" % [game_manager_node.current_turn, game_manager_node.current_wave_in_turn]
 	_update_proceed_button_text()
 	_update_all_spell_related_ui()
@@ -253,35 +277,35 @@ func _on_game_over(_reason_key: String, message: String):
 		ui_game_over_status_label.text = "Game Over!\n%s" % message 
 		ui_game_over_panel.visible = true
 	if is_instance_valid(ui_proceed_button): ui_proceed_button.disabled = true
-	_log_message("GAME OVER: %s" % message, true)
+	_log_message("GAME OVER: %s" % message, "red")
 	_update_all_spell_related_ui() 
 
 
 func _on_player_phase_started(phase_name: String): 
-	_log_message("Player Phase: %s" % phase_name)
+	_log_message("Player Phase: %s" % phase_name, "white")
 	_update_proceed_button_text()
 	_update_all_spell_related_ui() 
 
 func _on_battle_phase_started():
-	_log_message("Battle Phase Started!")
+	_log_message("Battle Phase Started!", "yellow") # Changed to yellow
 	_update_proceed_button_text()
 	_update_all_spell_related_ui() 
 
 
 func _on_wave_ended_log(wave_number: int, turn_number: int):
-	_log_message("Wave %d of Turn %d ended." % [wave_number, turn_number])
+	_log_message("Wave %d of Turn %d ended." % [wave_number, turn_number], "white")
 	_update_proceed_button_text()
 	_update_all_spell_related_ui()
 
 func _on_turn_ended_log(turn_number: int):
-	_log_message("Turn %d ended." % turn_number)
-	if is_instance_valid(necromancer_node): # Log DE replenish
-		_log_message("Necromancer DE replenished to %d." % necromancer_node.max_de)
+	_log_message("Turn %d ended." % turn_number, "white")
+	if is_instance_valid(necromancer_node): 
+		_log_message("Necromancer DE replenished to %d." % necromancer_node.max_de, "white")
 	_update_proceed_button_text()
 	_update_all_spell_related_ui()
 
 func _on_spell_upgraded(spell_data: SpellData): 
-	_log_message("%s upgraded to Lvl %d." % [spell_data.spell_name, spell_data.spell_level])
+	_log_message("%s upgraded to Lvl %d." % [spell_data.spell_name, spell_data.spell_level], "green") # Changed to green
 	_update_all_spell_related_ui() 
 
 
@@ -289,23 +313,21 @@ func _on_level_up_button_pressed():
 	if is_instance_valid(necromancer_node):
 		var old_level = necromancer_node.level
 		necromancer_node.level += 1 
-		_log_message("Necromancer leveled up from Lvl %d to Lvl %d. MP +1." % [old_level, necromancer_node.level])
+		_log_message("Necromancer leveled up from Lvl %d to Lvl %d. MP +1." % [old_level, necromancer_node.level], "green") # Changed to green
 
 
 func _on_reanimate_button_pressed():
 	var reanimate_spell = necromancer_node.get_spell_by_name("Reanimate")
 	if not is_instance_valid(reanimate_spell): 
-		_log_message("Reanimate spell not found.", true); return
+		_log_message("Reanimate spell not found.", "red"); return
 
 	var corpses = game_manager_node.get_available_corpses()
 	if corpses.is_empty(): 
-		_log_message("No corpses available to reanimate."); 
-		# Optionally emit a spell_cast_failed signal from Necromancer if it checks for targets
-		# For now, Game.gd handles this specific "no target" log.
+		_log_message("No corpses available to reanimate.", "yellow"); 
 		return
 	var target_corpse = corpses[0] 
 	
-	_log_message("Attempting to Reanimate corpse of %s..." % target_corpse.original_creature_name)
+	_log_message("Attempting to Reanimate corpse of %s..." % target_corpse.original_creature_name, "white")
 	necromancer_node.attempt_cast_spell(reanimate_spell, target_corpse)
 
 
@@ -319,7 +341,7 @@ func _on_reanimate_type_button_pressed():
 	if current_reanimate_spell_level_selection > max_types:
 		current_reanimate_spell_level_selection = 1 
 	_update_reanimate_type_button_text()
-	_log_message("Reanimate type selection changed to: %s" % ui_reanimate_type_button.text)
+	_log_message("Reanimate type selection changed to: %s" % ui_reanimate_type_button.text, "white")
 
 
 func _update_reanimate_type_button_text(): 
@@ -337,7 +359,7 @@ func _update_reanimate_type_button_text():
 func _on_soul_drain_button_pressed():
 	var soul_drain_spell = necromancer_node.get_spell_by_name("Soul Drain")
 	if not is_instance_valid(soul_drain_spell): 
-		_log_message("Soul Drain spell not found.", true); return
+		_log_message("Soul Drain spell not found.", "red"); return
 
 	var target_creature = null
 	var target_info_for_log = "AoE"
@@ -347,9 +369,9 @@ func _on_soul_drain_button_pressed():
 			target_creature = potential_targets[0] 
 			target_info_for_log = target_creature.creature_name
 		else: 
-			_log_message("No valid targets for single-target Soul Drain."); return
+			_log_message("No valid targets for single-target Soul Drain.", "yellow"); return
 	
-	_log_message("Attempting Soul Drain on %s..." % target_info_for_log)
+	_log_message("Attempting Soul Drain on %s..." % target_info_for_log, "white")
 	necromancer_node.attempt_cast_spell(soul_drain_spell, target_creature)
 
 
@@ -360,15 +382,14 @@ func _on_reanimate_upgrade_button_pressed():
 			if spell.spell_level < spell.max_spell_level:
 				var cost = spell.get_mastery_cost_for_next_upgrade()
 				if cost != -1 and necromancer_node.mastery_points >= cost:
-					_log_message("Attempting to upgrade Reanimate to Lvl %d for %d MP..." % [spell.spell_level + 1, cost])
-					if not necromancer_node.upgrade_spell_by_name("Reanimate"): # spell_upgraded signal will log success
-						_log_message("Reanimate upgrade failed for an unknown reason.", true) # Should be rare
-				elif cost != -1 : # Not enough MP
-					_log_message("Not enough MP to upgrade Reanimate (needs %d MP)." % cost, true)
-				# else, max level or cost error, button should be disabled / text reflect this.
+					_log_message("Attempting to upgrade Reanimate to Lvl %d for %d MP..." % [spell.spell_level + 1, cost], "white")
+					if not necromancer_node.upgrade_spell_by_name("Reanimate"): 
+						_log_message("Reanimate upgrade failed for an unknown reason.", "red") 
+				elif cost != -1 : 
+					_log_message("Not enough MP to upgrade Reanimate (needs %d MP)." % cost, "red")
 			# else max level, button should be disabled
 		else:
-			_log_message("Reanimate spell not found for upgrade.", true)
+			_log_message("Reanimate spell not found for upgrade.", "red")
 
 
 func _on_soul_drain_upgrade_button_pressed():
@@ -378,19 +399,18 @@ func _on_soul_drain_upgrade_button_pressed():
 			if spell.spell_level < spell.max_spell_level:
 				var cost = spell.get_mastery_cost_for_next_upgrade()
 				if cost != -1 and necromancer_node.mastery_points >= cost:
-					_log_message("Attempting to upgrade Soul Drain to Lvl %d for %d MP..." % [spell.spell_level + 1, cost])
+					_log_message("Attempting to upgrade Soul Drain to Lvl %d for %d MP..." % [spell.spell_level + 1, cost], "white")
 					if not necromancer_node.upgrade_spell_by_name("Soul Drain"):
-						_log_message("Soul Drain upgrade failed for an unknown reason.", true)
+						_log_message("Soul Drain upgrade failed for an unknown reason.", "red")
 				elif cost != -1:
-					_log_message("Not enough MP to upgrade Soul Drain (needs %d MP)." % cost, true)
+					_log_message("Not enough MP to upgrade Soul Drain (needs %d MP)." % cost, "red")
 			# else max level
 		else:
-			_log_message("Soul Drain spell not found for upgrade.", true)
+			_log_message("Soul Drain spell not found for upgrade.", "red")
 
 
 func _on_proceed_button_pressed():
 	if not is_instance_valid(game_manager_node): return
-	# Log action based on current phase before proceeding
 	var action_log = "Proceeding..."
 	match game_manager_node.current_game_phase:
 		GameManager.GamePhase.OUT_OF_TURN: action_log = "Starting Turn %d." % (game_manager_node.current_turn + 1)
@@ -402,7 +422,7 @@ func _on_proceed_button_pressed():
 			else:
 				action_log = "Proceeding to next Wave (%d)." % (game_manager_node.current_wave_in_turn + 1)
 		GameManager.GamePhase.TURN_ENDING: action_log = "Finalizing Turn %d." % game_manager_node.current_turn
-	_log_message(action_log)
+	_log_message(action_log, "white")
 
 	match game_manager_node.current_game_phase:
 		GameManager.GamePhase.OUT_OF_TURN: game_manager_node.proceed_to_next_turn()
@@ -431,5 +451,5 @@ func _update_proceed_button_text():
 		_: ui_proceed_button.text = "PROCEED"; ui_proceed_button.disabled = true
 
 func _on_restart_button_pressed():
-	_log_message("Restarting game...")
+	_log_message("Restarting game...", "white")
 	get_tree().reload_current_scene()

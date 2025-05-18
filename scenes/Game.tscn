@@ -167,7 +167,7 @@ theme = ExtResource("7_2rd6h")
 theme_type_variation = &"FlatButton"
 text = "START"
 
-[node name="Log" type="Label" parent="UI"]
+[node name="Log" type="RichTextLabel" parent="UI"]
 offset_left = 8.0
 offset_top = 288.0
 offset_right = 448.0
