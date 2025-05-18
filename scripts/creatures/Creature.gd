@@ -46,15 +46,15 @@ var battle_grid: BattleGrid
 # --- UI ELEMENTS ---
 # Configuration for UI elements
 const UI_FONT_SIZE: int = 12
-const UI_PADDING: int = 1
-const UI_ICON_SIZE: int = 16
+const UI_PADDING: int = 1 # Padding from the edges of the creature's cell
+const UI_ICON_SIZE: int = 16 # Assumes icons are square
 
 # Preload font (ensure this path is correct)
 const PIXEL_FONT_BOLD: Font = preload("res://assets/fonts/PixelOperator8-Bold.ttf")
 
 # UI Node References
 var stats_label: Label
-var level_label: Label
+var level_label: Label # Placeholder for future use
 var ability_icons_container: HBoxContainer
 var finality_label: Label # Though primarily for Undead, declare here for potential base class use
 
@@ -83,73 +83,58 @@ func _ready():
 	# For now, we assume attack_power is set on init.
 
 func _setup_ui_elements():
+	var cell_half_size = BattleGrid.CELL_SIZE / 2.0 # Assuming BattleGrid.CELL_SIZE is accessible or defined
+
 	# --- Stats Label (Attack/Health) ---
 	stats_label = Label.new()
 	stats_label.name = "StatsLabel"
-	stats_label.set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT)
-	stats_label.set_vertical_alignment(VERTICAL_ALIGNMENT_BOTTOM)
+	# Horizontal alignment will be set to RIGHT in _update_stats_label_ui before positioning
+	stats_label.set_vertical_alignment(VERTICAL_ALIGNMENT_BOTTOM) # Text grows upwards from bottom
 	# Font settings
 	var stats_font_settings = FontVariation.new()
 	stats_font_settings.set_base_font(PIXEL_FONT_BOLD)
 	stats_font_settings.set_variation_opentype({"size": UI_FONT_SIZE})
 	stats_label.add_theme_font_override("font", stats_font_settings)
-	stats_label.add_theme_font_size_override("font_size", UI_FONT_SIZE) # Explicitly set size
-	stats_label.modulate = Color.WHITE # Default color
+	stats_label.add_theme_font_size_override("font_size", UI_FONT_SIZE)
+	stats_label.modulate = Color.WHITE
 	add_child(stats_label)
-	# Position: Bottom-right of the 64x64 tile.
-	# Creature origin is center of 64x64 cell. So cell half-width/height is CELL_SIZE / 2.0
-	var cell_half_size = BattleGrid.CELL_SIZE / 2.0
-	# stats_label.position = Vector2(cell_half_size - UI_PADDING, cell_half_size - UI_PADDING) // Positioned in _update_stats_label_ui now
-	# Since the label is aligned bottom-right, its position is its bottom-right corner.
+	# Positioning is handled in _update_stats_label_ui to ensure it's correct after text changes.
 
 	# --- Level Label ---
 	level_label = Label.new()
 	level_label.name = "LevelLabel"
 	level_label.set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT)
 	level_label.set_vertical_alignment(VERTICAL_ALIGNMENT_TOP)
-	# Font settings
-	var level_font_settings = FontVariation.new()
+	var level_font_settings = FontVariation.new() # Re-use variable name, new instance
 	level_font_settings.set_base_font(PIXEL_FONT_BOLD)
 	level_font_settings.set_variation_opentype({"size": UI_FONT_SIZE})
 	level_label.add_theme_font_override("font", level_font_settings)
 	level_label.add_theme_font_size_override("font_size", UI_FONT_SIZE)
 	level_label.modulate = Color.WHITE
 	add_child(level_label)
-	# Position: Top-left of the 64x64 tile.
 	level_label.position = Vector2(-cell_half_size + UI_PADDING, -cell_half_size + UI_PADDING)
-	# Since the label is aligned top-left, its position is its top-left corner.
 
 	# --- Ability Icons Container ---
 	ability_icons_container = HBoxContainer.new()
 	ability_icons_container.name = "AbilityIconsContainer"
-	# Alignment within HBoxContainer items (though with fixed size icons, may not be critical)
-	ability_icons_container.set_alignment(BoxContainer.ALIGNMENT_END) # Aligns icons to the right of the container
+	# Alignment of items within HBoxContainer: END means children are pushed to the right.
+	ability_icons_container.set_alignment(BoxContainer.ALIGNMENT_END)
 	add_child(ability_icons_container)
-	# Position: Top-right of the 64x64 tile.
-	# The container's top-right corner should be at (cell_half_size - UI_PADDING, -cell_half_size + UI_PADDING)
-	# We'll position individual icons within it. The HBoxContainer itself will be positioned.
-	# The position of HBoxContainer is its top-left corner.
-	# To align its content to the top-right of the cell:
-	# Set its position so its top-right would be at (cell_half_size - UI_PADDING, -cell_half_size + UI_PADDING)
-	# This needs to account for the container's width. We'll adjust after adding icons.
-	# For now, let's set a placeholder position and refine it in _update_ability_icons
-	ability_icons_container.position = Vector2(cell_half_size - (3 * UI_ICON_SIZE) - UI_PADDING, -cell_half_size + UI_PADDING) # Rough estimate
+	# Positioning is handled in _update_ability_icons_ui.
 
-	# --- Finality Label (for Undead, setup here for structure) ---
-	# This will be primarily managed and made visible by Undead.gd
+	# --- Finality Label (for Undead) ---
 	finality_label = Label.new()
 	finality_label.name = "FinalityLabel"
 	finality_label.set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT)
 	finality_label.set_vertical_alignment(VERTICAL_ALIGNMENT_BOTTOM)
-	var finality_font_settings = FontVariation.new()
+	var finality_font_settings = FontVariation.new() # Re-use variable name, new instance
 	finality_font_settings.set_base_font(PIXEL_FONT_BOLD)
 	finality_font_settings.set_variation_opentype({"size": UI_FONT_SIZE})
 	finality_label.add_theme_font_override("font", finality_font_settings)
 	finality_label.add_theme_font_size_override("font_size", UI_FONT_SIZE)
 	finality_label.modulate = Color.WHITE
-	finality_label.visible = false # Hidden by default for non-Undead
+	finality_label.visible = false # Hidden by default
 	add_child(finality_label)
-	# Position: Bottom-left of the 64x64 tile.
 	finality_label.position = Vector2(-cell_half_size + UI_PADDING, cell_half_size - UI_PADDING)
 
 
@@ -164,8 +149,8 @@ func _update_reanimation_payload_from_current_stats():
 # --- SETTERS ---
 func _set_max_health(value: int):
 	max_health = max(1, value)
-	if current_health > max_health: _set_current_health(max_health) # This will trigger health_changed
-	else: emit_signal("health_changed", self, current_health, max_health) # Ensure signal emits if current_health didn't change
+	if current_health > max_health: _set_current_health(max_health)
+	else: emit_signal("health_changed", self, current_health, max_health)
 
 func _set_current_health(value: int):
 	var old_health = current_health
@@ -177,7 +162,7 @@ func _set_current_health(value: int):
 func _set_grid_pos(new_pos: Vector2i):
 	if grid_pos != new_pos:
 		grid_pos = new_pos
-		if is_instance_valid(battle_grid) and battle_grid.is_valid_grid_position(grid_pos): # Check validity before getting world pos
+		if is_instance_valid(battle_grid) and battle_grid.is_valid_grid_position(grid_pos):
 			self.position = battle_grid.get_world_position_for_grid_cell_center(grid_pos)
 		elif new_pos != Vector2i(-1,-1) and not is_instance_valid(battle_grid):
 			printerr("Creature '%s': BattleGrid ref missing. Cannot update visual pos for %s." % [creature_name, str(new_pos)])
@@ -187,19 +172,16 @@ func _set_finality_counter(value: int):
 	var old_finality = finality_counter
 	finality_counter = max(0, value)
 	if old_finality != finality_counter:
-		# This signal is more relevant for Undead, but emit if changed.
-		# Undead.gd will connect to this or have its own specific signal.
-		if faction == Faction.UNDEAD and has_signal("finality_changed"): # Check if Undead.gd added this signal
+		if faction == Faction.UNDEAD and has_signal("finality_changed"):
 			emit_signal("finality_changed", self, finality_counter)
-		_update_finality_label_ui() # Update UI if it's visible
+		_update_finality_label_ui()
 
 
 # --- CORE METHODS ---
 func initialize_creature(config: Dictionary):
 	creature_name = config.get("creature_name", "Default Name")
-	# Max health must be set before current health to ensure correct clamping
-	_set_max_health(config.get("max_health", 10)) # Use setter to trigger signals
-	_set_current_health(max_health) # Initialize to full health, use setter
+	_set_max_health(config.get("max_health", 10))
+	_set_current_health(max_health)
 
 	attack_power = config.get("attack_power", 1)
 	faction = config.get("faction", Faction.NONE)
@@ -207,7 +189,7 @@ func initialize_creature(config: Dictionary):
 	is_flying = config.get("is_flying", false)
 	has_reach = config.get("has_reach", false)
 
-	if config.has("finality_counter"): # For Undead primarily
+	if config.has("finality_counter"):
 		_set_finality_counter(config.get("finality_counter", 0))
 
 	_update_reanimation_payload_from_current_stats()
@@ -221,40 +203,26 @@ func initialize_creature(config: Dictionary):
 			var loaded_texture: Texture2D = load(texture_path)
 			if is_instance_valid(loaded_texture):
 				local_sprite_node.texture = loaded_texture
-				# --- NO SCALING LOGIC ---
-				# Assuming sprites are now natively 128x128 (or desired size for the cell)
-				# and should be centered. The Creature node itself is centered in the cell.
-				# The sprite is a child of Creature, so its local position (0,0) and scale (1,1)
-				# should display it correctly if its native size matches CELL_SIZE.
-				local_sprite_node.scale = Vector2(1,1) # Ensure scale is reset to default
-				# If your sprites are not exactly CELL_SIZE (e.g., 128x128), but you want them centered:
-				# var texture_size = loaded_texture.get_size()
-				# local_sprite_node.position = -texture_size / 2.0 # This centers the sprite's own origin
-				# However, if the sprite node's origin is already centered (e.g. via offset property in Sprite2D),
-				# then local_sprite_node.position = Vector2.ZERO is fine.
-				# For simplicity, if sprites are 128x128, their natural centering as a child node at (0,0) is usually what's intended.
-				# --- END NO SCALING LOGIC ---
+				local_sprite_node.scale = Vector2(1,1) # Assuming sprites are designed for the cell size
 			else:
-				printerr("Creature '%s': Loaded resource at '%s' is NOT a valid Texture2D. Using default." % [creature_name, texture_path])
+				printerr("Creature '%s': Loaded resource at '%s' is NOT a valid Texture2D." % [creature_name, texture_path])
 				local_sprite_node.texture = load("res://icon.svg")
 		else:
-			printerr("Creature '%s': Texture path NOT FOUND: '%s'. Using default icon." % [creature_name, texture_path])
+			printerr("Creature '%s': Texture path NOT FOUND: '%s'." % [creature_name, texture_path])
 			local_sprite_node.texture = load("res://icon.svg")
 	else:
-		printerr("Creature '%s': CRITICAL - Sprite node (child 'Sprite') MISSING in initialize_creature." % creature_name)
+		printerr("Creature '%s': CRITICAL - Sprite node (child 'Sprite') MISSING." % creature_name)
 	
-	# Update UI elements after initialization
 	_update_all_ui_elements()
 
 
 func take_damage(amount: int):
 	if not is_alive or amount <= 0: return
-	_set_current_health(current_health - amount) # Use setter
+	_set_current_health(current_health - amount)
 
 func die():
 	if not is_alive: return
 	is_alive = false; is_targetable = false
-	# Optionally hide UI elements on death
 	if is_instance_valid(stats_label): stats_label.visible = false
 	if is_instance_valid(level_label): level_label.visible = false
 	if is_instance_valid(ability_icons_container): ability_icons_container.visible = false
@@ -264,9 +232,7 @@ func die():
 func can_attack_target(target_creature: Creature) -> bool:
 	if not is_instance_valid(target_creature) or not target_creature.is_alive or not target_creature.is_targetable: return false
 	if not self.is_alive: return false
-	if target_creature.faction == self.faction and self.faction != Faction.NONE: return false # No friendly fire
-	# Flying/Reach interaction:
-	# If target is flying AND self is not flying AND self does not have reach, then cannot attack.
+	if target_creature.faction == self.faction and self.faction != Faction.NONE: return false
 	if target_creature.is_flying and not self.is_flying and not self.has_reach: return false
 	return true
 
@@ -279,8 +245,7 @@ func get_tooltip_info() -> Dictionary:
 	}
 
 func get_data_for_corpse_creation() -> Dictionary:
-	var corpse_data = reanimation_payload_data.duplicate(true) # Start with base data
-	# If this creature is Undead, its current finality counter at death is important.
+	var corpse_data = reanimation_payload_data.duplicate(true)
 	if self.faction == Faction.UNDEAD:
 		corpse_data["current_finality_counter_on_death"] = self.finality_counter
 	return corpse_data
@@ -293,37 +258,33 @@ func _update_all_ui_elements():
 	_update_stats_label_ui()
 	_update_level_label_ui()
 	_update_ability_icons_ui()
-	_update_finality_label_ui() # Called here, but visibility is handled by Undead.gd
+	_update_finality_label_ui()
 
 func _update_stats_label_ui():
 	if not is_instance_valid(stats_label): return
 	stats_label.text = "%d/%d" % [attack_power, current_health]
 	if current_health < max_health:
-		stats_label.modulate = Color.RED # Damaged health in red
+		stats_label.modulate = Color.RED
 	else:
-		stats_label.modulate = Color.WHITE # Full health in white
+		stats_label.modulate = Color.WHITE
 
-	# New positioning logic for stats_label:
-	# Ensure the label has its size calculated based on the new text and font.
-	# This might require a brief moment or deferral if called immediately after scene load.
-	# get_minimum_size() should give the size the label wants to be.
-	var label_size = stats_label.get_minimum_size()
+	# MODIFICATION: Ensure right alignment and correct positioning
+	stats_label.set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT)
+	
+	# It's important to get the size *after* text and alignment are set
+	var label_size = stats_label.get_minimum_size() 
 	var cell_half_size = BattleGrid.CELL_SIZE / 2.0
 
-	# Target bottom-right corner for the label's bounding box, with padding
-	var target_br_x = cell_half_size - UI_PADDING
-	var target_br_y = cell_half_size - UI_PADDING
-
-	# Calculate the top-left position for the label
+	# Position the label so its bottom-right corner is at the desired padded location.
+	# The label's 'position' property refers to its top-left corner.
 	stats_label.position = Vector2(
-		target_br_x - label_size.x,
-		target_br_y - label_size.y
+		(cell_half_size - UI_PADDING) - label_size.x,  # X: (Cell_Right_Edge - Padding) - Label_Width
+		(cell_half_size - UI_PADDING) - label_size.y   # Y: (Cell_Bottom_Edge - Padding) - Label_Height
 	)
 
 func _update_level_label_ui():
 	if not is_instance_valid(level_label): return
-	# Creature level isn't implemented yet, so default to "Lvl 1"
-	level_label.text = "Lvl 1" # Placeholder
+	level_label.text = "Lvl 1" # Placeholder for now
 
 func _update_ability_icons_ui():
 	if not is_instance_valid(ability_icons_container): return
@@ -333,21 +294,17 @@ func _update_ability_icons_ui():
 		child.queue_free()
 
 	var cell_half_size = BattleGrid.CELL_SIZE / 2.0
-	var current_x_offset = 0 # For manual positioning if HBox doesn't size as expected initially
+	var number_of_icons = 0 # Keep track of actual icons added
 
 	# Speed Icon
 	var speed_icon_node = TextureRect.new()
 	speed_icon_node.custom_minimum_size = Vector2(UI_ICON_SIZE, UI_ICON_SIZE)
 	match speed_type:
-		SpeedType.SLOW:
-			speed_icon_node.texture = icon_texture_speed_slow
-		SpeedType.NORMAL:
-			speed_icon_node.texture = icon_texture_speed_normal
-		SpeedType.FAST:
-			speed_icon_node.texture = icon_texture_speed_fast
+		SpeedType.SLOW: speed_icon_node.texture = icon_texture_speed_slow
+		SpeedType.NORMAL: speed_icon_node.texture = icon_texture_speed_normal
+		SpeedType.FAST: speed_icon_node.texture = icon_texture_speed_fast
 	ability_icons_container.add_child(speed_icon_node)
-	current_x_offset += UI_ICON_SIZE + ability_icons_container.get_theme_constant("separation", "HBoxContainer")
-
+	number_of_icons += 1
 
 	# Flying Icon
 	if is_flying:
@@ -355,7 +312,7 @@ func _update_ability_icons_ui():
 		flying_icon_node.texture = icon_texture_flying
 		flying_icon_node.custom_minimum_size = Vector2(UI_ICON_SIZE, UI_ICON_SIZE)
 		ability_icons_container.add_child(flying_icon_node)
-		current_x_offset += UI_ICON_SIZE + ability_icons_container.get_theme_constant("separation", "HBoxContainer")
+		number_of_icons += 1
 
 	# Reach Icon
 	if has_reach:
@@ -363,28 +320,36 @@ func _update_ability_icons_ui():
 		reach_icon_node.texture = icon_texture_reach
 		reach_icon_node.custom_minimum_size = Vector2(UI_ICON_SIZE, UI_ICON_SIZE)
 		ability_icons_container.add_child(reach_icon_node)
-		current_x_offset += UI_ICON_SIZE # Last icon, no separation after it needed for width calc
+		number_of_icons += 1
 
-	# Position the container: Top-Right
-	# The container's position is its top-left. We want its top-right to be at the cell's top-right with padding.
-	# So, new_x = (cell_half_size - UI_PADDING) - container_width
-	# We need to wait for the HBoxContainer to arrange its children to get its actual width.
-	# A call_deferred might be needed if size isn't updated immediately.
-	# For now, we'll use the calculated current_x_offset as an approximation of width.
-	# If HBoxContainer has internal padding, this might need adjustment.
-	var container_width = current_x_offset
-	if ability_icons_container.get_child_count() > 0 : # Remove last separation if any
-		container_width -= ability_icons_container.get_theme_constant("separation", "HBoxContainer")
+	# If no icons, hide the container and stop
+	if number_of_icons == 0:
+		ability_icons_container.visible = false
+		return
+	else:
+		ability_icons_container.visible = true # Ensure visible if there are icons
+
+	# MODIFICATION: Calculate total width of HBoxContainer and position it
+	# Get the separation value from the theme (or default if not set)
+	# Note: HBoxContainer might take a frame to update its size after children are added.
+	# If direct calculation is off, a 'call_deferred' might be needed for positioning,
+	# or using the HBoxContainer's 'size' property after it has rearranged.
+	# For now, we calculate expected width.
+	var separation = ability_icons_container.get_theme_constant("separation", "HBoxContainer") # Default is 4
 	
+	var container_width = (number_of_icons * UI_ICON_SIZE)
+	if number_of_icons > 1: # Add separation space only if there's more than one icon
+		container_width += (number_of_icons - 1) * separation
+	
+	# Position the HBoxContainer so its top-right corner is at the cell's top-right with padding.
+	# The container's 'position' is its top-left corner.
 	ability_icons_container.position = Vector2(
-		cell_half_size - container_width - UI_PADDING,
-		-cell_half_size + UI_PADDING
+		(cell_half_size - UI_PADDING) - container_width, # X: (Cell_Right_Edge - Padding) - Container_Width
+		-cell_half_size + UI_PADDING                     # Y: Cell_Top_Edge + Padding
 	)
-	ability_icons_container.visible = ability_icons_container.get_child_count() > 0
 
 
 func _update_finality_label_ui():
 	if not is_instance_valid(finality_label): return
-	# This will be primarily controlled by Undead.gd, which sets visibility
-	if finality_label.visible: # Only update text if it's meant to be seen
+	if finality_label.visible: # Only update text if it's meant to be seen (controlled by Undead.gd)
 		finality_label.text = str(finality_counter)
