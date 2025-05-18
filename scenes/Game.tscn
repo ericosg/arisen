@@ -209,7 +209,7 @@ offset_right = 616.0
 offset_bottom = 173.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
-text = "Turn"
+text = "Humans"
 
 [node name="TurnWaveLabel" type="Label" parent="UI"]
 offset_left = 832.0
@@ -218,4 +218,4 @@ offset_right = 872.0
 offset_bottom = 173.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
-text = "Humans"
+text = "Turn"
