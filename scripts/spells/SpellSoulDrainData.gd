@@ -2,165 +2,180 @@
 extends SpellData
 class_name SpellSoulDrainData
 
-# Defines the Soul Drain spell. Damages living creatures and restores DE to the caster.
-# Can target allied Humans or enemy Aliens. Does not target Undead.
-# Becomes AoE at higher spell levels.
+# --- SPELL-SPECIFIC DATA ---
+var de_costs_per_level: Array[int] # DE cost FOR CASTING AT L1, L2, L3, L4, L5
 
-func _init(config: Dictionary = {}):
-	super._init(config) # Call parent constructor
+func _init():
+	super._init() # Call base class _init
 
-	# Default values specific to Soul Drain
-	spell_name = config.get("spell_name", "Soul Drain")
-	spell_description = config.get("spell_description", "Damages a living creature, restoring Dark Energy to the caster. Affects more targets at higher levels.")
-	de_cost = config.get("de_cost", 8) # Base DE cost
-	required_mc_level = config.get("required_mc_level", 1)
-	spell_level = config.get("spell_level", 1)
-	max_spell_level = config.get("max_spell_level", 5) # Example max level
+	# --- Define all specific properties for Soul Drain ---
+	spell_name = "Soul Drain"
+	spell_description = "Damages a living creature, restoring Dark Energy to the caster. Affects more targets at higher levels."
+	required_mc_level = 1
+	target_type = TargetType.ENEMY_CREATURE # Default, logic handles specific targeting
+
+	# Define DE costs for casting AT each level (L1 to L5)
+	de_costs_per_level = [8, 10, 12, 14, 16]
+
+	# Define Mastery Point costs to upgrade TO L2, L3, L4, L5
+	mastery_costs = [1, 2, 3, 4] 
+
+	# Calculate max_spell_level based on mastery_costs array
+	max_spell_level = mastery_costs.size() + 1
 	
-	# Target type can be tricky: it's a creature, but if AoE, no specific target is pre-selected.
-	# Let's say it's ENEMY_CREATURE for single target, and for AoE it will pick from valid types.
-	# Or perhaps a new TargetType like ANY_LIVING_NON_UNDEAD.
-	# For now, let's use ENEMY_CREATURE and handle allied human targeting in logic.
-	# Or, if level 1 is single target, it might be ENEMY_CREATURE or ALLY_CREATURE.
-	# If AoE, target_type might be NONE or a special AoE type.
-	# Let's simplify: if it needs a specific target (level 1), it's CREATURE. Otherwise, NONE.
-	target_type = TargetType.ENEMY_CREATURE # Default for Lvl 1, can also hit ALLY_CREATURE (Humans)
+	# spell_level is already initialized to 1 by SpellData's _init()
 
+# --- OVERRIDE REQUIRED METHODS ---
 
-# Override can_cast for SoulDrain-specific checks
-func can_cast(caster_node, current_de: int, target_data = null) -> bool:
-	if not super.can_cast(caster_node, current_de): # Check base conditions (DE, MC level)
-		return false
+func get_current_de_cost() -> int:
+	if spell_level - 1 >= 0 and spell_level - 1 < de_costs_per_level.size():
+		return de_costs_per_level[spell_level - 1]
+	else:
+		printerr("SoulDrain '%s': Invalid spell_level %d for de_costs_per_level (size %d)." % [spell_name, spell_level, de_costs_per_level.size()])
+		return 999 # Fallback high cost
 
-	# At level 1 (single target), a target is required.
-	# At higher levels (AoE), target_data might be null as it hits multiple.
-	var num_targets_to_hit = _get_num_targets_for_level()
-	if num_targets_to_hit == 1: # Single target mode
-		if not target_data is Creature:
-			printerr("Soul Drain (Single Target): Invalid target. Expected a Creature.")
-			return false
-		var creature_target: Creature = target_data
-		if not is_instance_valid(creature_target) or not creature_target.is_alive:
-			printerr("Soul Drain (Single Target): Target creature is invalid or dead.")
-			return false
-		if creature_target.faction == Creature.Faction.UNDEAD:
-			# print_debug("Soul Drain (Single Target): Cannot target Undead creatures.")
-			return false
-		# Can target HUMAN or ALIEN
-		if creature_target.faction != Creature.Faction.HUMAN && creature_target.faction != Creature.Faction.ALIEN:
-			printerr("Soul Drain (Single Target): Can only target Humans or Aliens.")
-			return false
-	else: # AoE mode, no specific single target needed at cast time, but game_manager must be valid
-		if not is_instance_valid(game_manager):
-			printerr("Soul Drain (AoE): GameManager reference not set, cannot find targets.")
-			return false
-			
-	return true
-
-# Override cast to handle the Soul Drain spell's execution
 func cast(caster_node, target_data = null) -> bool:
 	if not is_instance_valid(caster) or not is_instance_valid(game_manager):
-		printerr("Soul Drain: Caster or GameManager reference not set in spell.")
+		printerr("SoulDrain '%s': Caster or GameManager reference not set." % spell_name)
+		if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+			caster_node.emit_signal("spell_cast_failed", spell_name, "Internal Error: Caster/GM missing.")
 		return false
 
 	if not can_cast(caster_node, caster.current_de, target_data):
 		return false
 
-	caster.spend_de(de_cost)
+	if not caster.spend_de(get_current_de_cost()):
+		printerr("SoulDrain '%s': Failed to spend DE." % spell_name) 
+		if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+			caster_node.emit_signal("spell_cast_failed", spell_name, "Failed to spend DE.")
+		return false
+		
 	var success = apply_effect(caster_node, target_data)
 	
-	# No explicit success/failure message here, apply_effect will print debugs
+	if not success and (_get_num_targets_for_level() > 1 or target_data == null): 
+		if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+			caster_node.emit_signal("spell_cast_failed", spell_name, "No valid targets found for effect.")
+	#else:
+		# print_debug("SoulDrain '%s' cast success status: %s" % [spell_name, str(success)])
+
 	return success
 
-# Override apply_effect for the core Soul Drain logic
-func apply_effect(caster_node, target_data = null) -> bool:
+func apply_effect(_caster_node, target_data = null) -> bool:
 	var damage_amount = _get_damage_for_level()
 	var de_restored_per_hit = _get_de_restored_for_level()
 	var num_targets_to_hit = _get_num_targets_for_level()
 	var actual_targets_hit = 0
 
-	if num_targets_to_hit == 1: # Single target
-		if not target_data is Creature: return false # Should be caught by can_cast
+	if not is_instance_valid(game_manager): 
+		printerr("SoulDrain '%s' apply_effect: GameManager reference is not valid." % spell_name)
+		return false
+
+	if num_targets_to_hit == 1: 
+		if not target_data is Creature: 
+			printerr("SoulDrain '%s' apply_effect (single target): Invalid target_data." % spell_name)
+			return false 
 		var creature_target: Creature = target_data
 		
-		# Double check validity (already done in can_cast for single target)
-		if not is_instance_valid(creature_target) or not creature_target.is_alive or \
-		   creature_target.faction == Creature.Faction.UNDEAD or \
-		   (creature_target.faction != Creature.Faction.HUMAN and creature_target.faction != Creature.Faction.ALIEN):
-			printerr("Soul Drain (Single Target): Invalid target in apply_effect.")
-			return false
-
-		# print_debug("Soul Drain hits %s (Faction: %s) for %d damage." % [creature_target.creature_name, Creature.Faction.keys()[creature_target.faction], damage_amount])
-		creature_target.take_damage(damage_amount)
-		actual_targets_hit = 1
-	else: # AoE target
-		var potential_targets: Array[Creature] = []
-		# Assumes game_manager has these lists populated
-		for creature in game_manager.get_all_living_humans_and_aliens(): # Needs method in GameManager
-			if is_instance_valid(creature) and creature.is_alive: # Redundant check if list is clean
-				potential_targets.append(creature)
-		
+		# Re-validate for safety, though can_cast should cover it
+		if is_instance_valid(creature_target) and creature_target.is_alive and \
+		   creature_target.faction != Creature.Faction.UNDEAD and \
+		   (creature_target.faction == Creature.Faction.HUMAN or creature_target.faction == Creature.Faction.ALIEN):
+			# print_debug("SoulDrain '%s' hits %s for %d damage." % [spell_name, creature_target.creature_name, damage_amount])
+			creature_target.take_damage(damage_amount)
+			actual_targets_hit = 1
+		# else: print_debug("SoulDrain '%s' apply_effect (single target): Target %s invalid or not alive." % [spell_name, str(target_data)])
+	else: # AoE 
+		var potential_targets: Array[Creature] = game_manager.get_all_living_humans_and_aliens()
 		potential_targets.shuffle()
 		
 		var targets_to_actually_damage = min(potential_targets.size(), num_targets_to_hit)
 		for i in range(targets_to_actually_damage):
 			var random_target: Creature = potential_targets[i]
-			# print_debug("Soul Drain (AoE) hits %s (Faction: %s) for %d damage." % [random_target.creature_name, Creature.Faction.keys()[random_target.faction], damage_amount])
+			# print_debug("SoulDrain '%s' (AoE) hits %s for %d damage." % [spell_name, random_target.creature_name, damage_amount])
 			random_target.take_damage(damage_amount)
 			actual_targets_hit += 1
 			
 	if actual_targets_hit > 0:
 		var total_de_restored = de_restored_per_hit * actual_targets_hit
 		caster.restore_de(total_de_restored)
-		# print_debug("Soul Drain restored %d DE to caster." % total_de_restored)
+		# print_debug("SoulDrain '%s' restored %d DE to caster." % [spell_name, total_de_restored])
 	
 	return actual_targets_hit > 0
 
+# --- OVERRIDE OTHER OPTIONAL METHODS ---
+
+# Override can_cast to add SoulDrain-specific target checks
+func can_cast(caster_node, current_de_on_caster: int, target_data = null) -> bool:
+	if not super.can_cast(caster_node, current_de_on_caster, target_data): 
+		return false
+
+	var num_targets_to_hit = _get_num_targets_for_level()
+	if num_targets_to_hit == 1: # Single target mode
+		if not target_data is Creature:
+			if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+				caster_node.emit_signal("spell_cast_failed", spell_name, "Invalid target. Expected a Creature.")
+			# else: printerr("SoulDrain '%s' can_cast (single): Invalid target. Expected Creature." % spell_name)
+			return false
+		var creature_target: Creature = target_data
+		if not is_instance_valid(creature_target) or not creature_target.is_alive:
+			if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+				caster_node.emit_signal("spell_cast_failed", spell_name, "Target creature is invalid or dead.")
+			# else: printerr("SoulDrain '%s' can_cast (single): Target creature invalid/dead." % spell_name)
+			return false
+		if creature_target.faction == Creature.Faction.UNDEAD:
+			if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+				caster_node.emit_signal("spell_cast_failed", spell_name, "Cannot target Undead creatures.")
+			return false
+		if creature_target.faction != Creature.Faction.HUMAN && creature_target.faction != Creature.Faction.ALIEN:
+			if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+				caster_node.emit_signal("spell_cast_failed", spell_name, "Can only target Humans or Aliens.")
+			return false
+	else: # AoE mode
+		if not is_instance_valid(game_manager): # game_manager is a property of SpellData
+			if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+				caster_node.emit_signal("spell_cast_failed", spell_name, "Internal Error: GameManager missing for AoE.")
+			# else: printerr("SoulDrain '%s' can_cast (AoE): GameManager reference not set." % spell_name)
+			return false
+	return true
 
 # --- Helper methods for level-based scaling ---
 func _get_damage_for_level() -> int:
 	match spell_level:
-		1: return 5
-		2: return 7
-		3: return 9
-		4: return 11
+		1: return 5; 
+		2: return 7; 
+		3: return 9; 
+		4: return 11; 
 		5: return 13
-		_: return 5 # Default for invalid levels
+		_: printerr("SoulDrain '%s': Invalid spell_level %d for _get_damage_for_level." % [spell_name, spell_level]); return 5 
 
 func _get_de_restored_for_level() -> int:
 	match spell_level:
-		1: return 3
-		2: return 4
-		3: return 5
-		4: return 6
+		1: return 3; 
+		2: return 4; 
+		3: return 5; 
+		4: return 6; 
 		5: return 7
-		_: return 3
+		_: printerr("SoulDrain '%s': Invalid spell_level %d for _get_de_restored_for_level." % [spell_name, spell_level]); return 3
 
 func _get_num_targets_for_level() -> int:
-	# Level 1 is single target. Higher levels hit more.
 	match spell_level:
-		1: return 1 
-		2: return 2 # Hits up to 2 random valid targets
-		3: return 3 # Hits up to 3
-		4: return 4
+		1: return 1; 
+		2: return 2; 
+		3: return 3; 
+		4: return 4; 
 		5: return 5
-		_: return 1
+		_: printerr("SoulDrain '%s': Invalid spell_level %d for _get_num_targets_for_level." % [spell_name, spell_level]); return 1
 
-
-# Override to provide valid targets for Soul Drain
-func get_valid_targets(caster_node, all_creatures: Array, all_corpses: Array) -> Array:
+func get_valid_targets(_caster_node, _all_creatures: Array, _all_corpses: Array) -> Array[Creature]:
 	var valid_targets: Array[Creature] = []
 	if not is_instance_valid(game_manager):
-		printerr("SoulDrain/get_valid_targets: GameManager reference not set.")
+		printerr("SoulDrain '%s' get_valid_targets: GameManager reference not set." % spell_name)
 		return valid_targets
 
-	# This method is primarily for UI to show potential single targets.
-	# For AoE, it might just show all possible targets that *could* be hit.
-	for creature in game_manager.get_all_living_humans_and_aliens(): # Needs method in GameManager
-		if is_instance_valid(creature) and creature.is_alive: # Already filtered by the GM method hopefully
+	for creature in game_manager.get_all_living_humans_and_aliens(): 
+		if is_instance_valid(creature) and creature.is_alive: 
 			valid_targets.append(creature)
 	return valid_targets
-
 
 func get_level_specific_description() -> String:
 	var damage = _get_damage_for_level()
@@ -172,15 +187,8 @@ func get_level_specific_description() -> String:
 	
 	return "Deals %d damage to %s.\nRestores %d DE to caster for each target hit." % [damage, target_desc, de_gain]
 
-func upgrade_spell():
-	if super.upgrade_spell(): # Call base to increment spell_level
-		# DE cost could also scale, e.g., more targets = higher cost
-		match spell_level:
-			1: de_cost = 8
-			2: de_cost = 10 # Cost for hitting 2 targets
-			3: de_cost = 12 # Cost for hitting 3 targets
-			4: de_cost = 14
-			5: de_cost = 16
-		# print_debug("Soul Drain upgraded. New DE cost: %d. Damage: %d. Targets: %d. DE Restored/Hit: %d" % [de_cost, _get_damage_for_level(), _get_num_targets_for_level(), _get_de_restored_for_level()])
+func upgrade_spell() -> bool:
+	if super.upgrade_spell(): # This increments spell_level in SpellData
+		# print_debug("SoulDrain '%s' upgraded to L%d. DE cost: %d." % [spell_name, spell_level, get_current_de_cost()])
 		return true
 	return false
