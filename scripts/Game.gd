@@ -98,8 +98,7 @@ func _connect_game_signals():
 		game_manager_node.wave_ended.connect(_on_wave_ended_log) 
 		game_manager_node.turn_ended.connect(_on_turn_ended_log) 
 		
-		# Connect to GameManager's new signal for detailed event logging
-		if game_manager_node.has_signal("game_event_log_requested"): # Check if signal exists
+		if game_manager_node.has_signal("game_event_log_requested"): 
 			game_manager_node.game_event_log_requested.connect(_on_game_manager_event_logged)
 		else:
 			printerr("Game.gd: GameManagerNode is missing 'game_event_log_requested' signal.")
@@ -127,24 +126,21 @@ func _log_message(message: String, color_name: String = "white"):
 	var bbcode_message = message
 	var final_color_name = color_name.to_lower()
 
-	# Ensure recognized colors, default to white
 	match final_color_name:
 		"green", "red", "yellow", "white":
 			bbcode_message = "[color=%s]%s[/color]" % [final_color_name, message]
-		_: # Unrecognized color string
-			bbcode_message = "[color=white]%s[/color]" % message # Default to white
-			# print_debug("Log: Unrecognized color '%s', defaulting to white for message: %s" % [color_name, message])
+		_: 
+			bbcode_message = "[color=white]%s[/color]" % message 
 	
-	# For console debugging, print the raw message without BBCode for readability
-	if final_color_name == "red" and not message.begins_with("ERROR:"): # Avoid double "ERROR:"
+	if final_color_name == "red" and not message.begins_with("ERROR:"): 
 		printerr("GAME LOG (UI: %s): %s" % [final_color_name, message])
 	else:
 		print("GAME LOG (UI: %s): %s" % [final_color_name, message])
 
 
-	game_log_messages.append(bbcode_message) # Store the BBCode formatted message
+	game_log_messages.append(bbcode_message) 
 	if game_log_messages.size() > MAX_LOG_LINES:
-		game_log_messages.pop_front() # Remove the oldest message
+		game_log_messages.pop_front() 
 
 	if is_instance_valid(ui_log_label):
 		ui_log_label.text = "\n".join(game_log_messages)
@@ -159,7 +155,7 @@ func _on_spell_cast_failed_ui_log(spell_name: String, reason: String):
 	_update_all_spell_related_ui() 
 
 func _on_spell_cast_succeeded_ui_log(spell_name: String):
-	_log_message("%s cast successfully." % spell_name, "white") # Or green if preferred for success
+	_log_message("%s cast successfully." % spell_name, "white") 
 	_update_all_spell_related_ui() 
 
 
@@ -172,20 +168,23 @@ func _update_necromancer_labels_from_node():
 	if is_instance_valid(ui_mastery_points_label): ui_mastery_points_label.text = "MP: %d" % necromancer_node.mastery_points
 
 func _update_all_spell_related_ui():
-	if not is_instance_valid(necromancer_node): return
+	if not is_instance_valid(necromancer_node) or not is_instance_valid(game_manager_node): return # Added GameManager check for phase
 
 	var reanimate_spell = necromancer_node.get_spell_by_name("Reanimate") 
 	var soul_drain_spell = necromancer_node.get_spell_by_name("Soul Drain") 
 
-	var can_act_in_phase = (game_manager_node.current_game_phase == GameManager.GamePhase.PLAYER_PRE_BATTLE or \
+	var can_cast_in_phase = (game_manager_node.current_game_phase == GameManager.GamePhase.PLAYER_PRE_BATTLE or \
 						   game_manager_node.current_game_phase == GameManager.GamePhase.PLAYER_POST_BATTLE)
+	# Spell upgrades are only allowed outside of turns
+	var can_upgrade_in_phase = (game_manager_node.current_game_phase == GameManager.GamePhase.OUT_OF_TURN)
+
 
 	# Reanimate Button
 	if is_instance_valid(ui_reanimate_button):
 		if is_instance_valid(reanimate_spell):
 			var current_de_cost = reanimate_spell.get_current_de_cost()
 			ui_reanimate_button.text = "RNT L%d (%dDE)" % [reanimate_spell.spell_level, current_de_cost]
-			ui_reanimate_button.disabled = not can_act_in_phase or necromancer_node.current_de < current_de_cost
+			ui_reanimate_button.disabled = not can_cast_in_phase or necromancer_node.current_de < current_de_cost
 		else: 
 			ui_reanimate_button.text = "RNT (N/A)"
 			ui_reanimate_button.disabled = true
@@ -197,7 +196,8 @@ func _update_all_spell_related_ui():
 				var mp_cost = reanimate_spell.get_mastery_cost_for_next_upgrade()
 				if mp_cost != -1:
 					ui_reanimate_upgrade_button.text = "Up RNT L%d (%dMP)" % [reanimate_spell.spell_level + 1, mp_cost]
-					ui_reanimate_upgrade_button.disabled = not can_act_in_phase or necromancer_node.mastery_points < mp_cost
+					# MODIFIED: Check can_upgrade_in_phase
+					ui_reanimate_upgrade_button.disabled = not can_upgrade_in_phase or necromancer_node.mastery_points < mp_cost
 				else: 
 					ui_reanimate_upgrade_button.text = "Up RNT (Cost?)" 
 					ui_reanimate_upgrade_button.disabled = true
@@ -213,7 +213,7 @@ func _update_all_spell_related_ui():
 		if is_instance_valid(soul_drain_spell):
 			var current_de_cost = soul_drain_spell.get_current_de_cost()
 			ui_soul_drain_button.text = "DRN L%d (%dDE)" % [soul_drain_spell.spell_level, current_de_cost]
-			ui_soul_drain_button.disabled = not can_act_in_phase or necromancer_node.current_de < current_de_cost
+			ui_soul_drain_button.disabled = not can_cast_in_phase or necromancer_node.current_de < current_de_cost
 		else:
 			ui_soul_drain_button.text = "DRN (N/A)"
 			ui_soul_drain_button.disabled = true
@@ -225,7 +225,8 @@ func _update_all_spell_related_ui():
 				var mp_cost = soul_drain_spell.get_mastery_cost_for_next_upgrade()
 				if mp_cost != -1:
 					ui_soul_drain_upgrade_button.text = "Up DRN L%d (%dMP)" % [soul_drain_spell.spell_level + 1, mp_cost]
-					ui_soul_drain_upgrade_button.disabled = not can_act_in_phase or necromancer_node.mastery_points < mp_cost
+					# MODIFIED: Check can_upgrade_in_phase
+					ui_soul_drain_upgrade_button.disabled = not can_upgrade_in_phase or necromancer_node.mastery_points < mp_cost
 				else:
 					ui_soul_drain_upgrade_button.text = "Up DRN (Cost?)" 
 					ui_soul_drain_upgrade_button.disabled = true
@@ -287,7 +288,7 @@ func _on_player_phase_started(phase_name: String):
 	_update_all_spell_related_ui() 
 
 func _on_battle_phase_started():
-	_log_message("Battle Phase Started!", "yellow") # Changed to yellow
+	_log_message("Battle Phase Started!", "yellow") 
 	_update_proceed_button_text()
 	_update_all_spell_related_ui() 
 
@@ -305,7 +306,7 @@ func _on_turn_ended_log(turn_number: int):
 	_update_all_spell_related_ui()
 
 func _on_spell_upgraded(spell_data: SpellData): 
-	_log_message("%s upgraded to Lvl %d." % [spell_data.spell_name, spell_data.spell_level], "green") # Changed to green
+	_log_message("%s upgraded to Lvl %d." % [spell_data.spell_name, spell_data.spell_level], "green") 
 	_update_all_spell_related_ui() 
 
 
@@ -313,7 +314,7 @@ func _on_level_up_button_pressed():
 	if is_instance_valid(necromancer_node):
 		var old_level = necromancer_node.level
 		necromancer_node.level += 1 
-		_log_message("Necromancer leveled up from Lvl %d to Lvl %d. MP +1." % [old_level, necromancer_node.level], "green") # Changed to green
+		_log_message("Necromancer leveled up from Lvl %d to Lvl %d. MP +1." % [old_level, necromancer_node.level], "green") 
 
 
 func _on_reanimate_button_pressed():

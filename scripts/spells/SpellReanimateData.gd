@@ -113,14 +113,35 @@ func apply_effect(_caster_node, target_data = null) -> bool:
 	if not is_instance_valid(game_manager):
 		printerr("Reanimate '%s' apply_effect: GameManager reference is not valid." % spell_name)
 		return false
-		
-	var new_undead_node = game_manager.spawn_reanimated_creature(creature_config)
+	
+	# Get the grid position where the corpse was
+	var spawn_pos: Vector2i = corpse.grid_pos_on_death
+	if not battle_grid.is_valid_grid_position(spawn_pos):
+		# Fallback: if corpse position is invalid, try to find a nearby valid player spot
+		# This is a basic fallback, might need more sophisticated logic
+		printerr("Reanimate '%s' apply_effect: Corpse grid_pos_on_death %s is invalid. Attempting fallback." % [spell_name, str(spawn_pos)])
+		# Try player's back row, first empty cell
+		var player_back_row_y = battle_grid.get_player_row_y_by_faction_row_num(1)
+		if player_back_row_y != -1:
+			spawn_pos = battle_grid.find_first_empty_cell_in_row(player_back_row_y)
+		if not battle_grid.is_valid_grid_position(spawn_pos): # If still invalid
+			printerr("Reanimate '%s' apply_effect: Could not find a valid fallback spawn position." % spell_name)
+			# Decide if you want to add to roster or fail completely
+			# For now, let's try to add to roster if GameManager supports it without a grid pos
+			# However, spawn_reanimated_creature expects a grid_pos.
+			# So, if no valid grid_pos, we must fail here or change spawn_reanimated_creature.
+			# For now, failing.
+			return false
+
+
+	# Call GameManager to spawn the creature, now with the grid position
+	var new_undead_node = game_manager.spawn_reanimated_creature(creature_config, spawn_pos)
 
 	if is_instance_valid(new_undead_node):
 		game_manager.consume_corpse(corpse) 
 		return true
 	else:
-		printerr("Reanimate '%s' apply_effect: GameManager failed to spawn creature." % spell_name)
+		printerr("Reanimate '%s' apply_effect: GameManager failed to spawn creature at %s." % [spell_name, str(spawn_pos)])
 		return false
 
 # --- OVERRIDE OTHER OPTIONAL METHODS ---
@@ -133,23 +154,33 @@ func can_cast(caster_node, current_de_on_caster: int, target_data = null) -> boo
 	if not target_data is CorpseData:
 		if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
 			caster_node.emit_signal("spell_cast_failed", spell_name, "Invalid target. Expected CorpseData.")
-		# else: printerr("Reanimate '%s' can_cast: Invalid target. Expected CorpseData." % spell_name)
 		return false
 
 	var corpse: CorpseData = target_data
 	if not corpse.can_be_reanimated():
 		if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
 			caster_node.emit_signal("spell_cast_failed", spell_name, "Corpse cannot be reanimated (Finality: %d)." % corpse.finality_counter)
-		# else: print_debug("Reanimate '%s' can_cast: Corpse (Finality: %d) cannot be reanimated." % [spell_name, corpse.finality_counter])
 		return false
 	
 	var undead_type_to_create = get_undead_type_for_current_level()
 	if undead_type_to_create == "":
 		if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
 			caster_node.emit_signal("spell_cast_failed", spell_name, "No valid Undead type for spell level %d." % spell_level)
-		# else: printerr("Reanimate '%s' can_cast: No valid Undead type for spell level %d." % [spell_name, spell_level])
 		return false
 
+	# Check if the target corpse's grid position is valid for spawning
+	if not battle_grid.is_valid_grid_position(corpse.grid_pos_on_death):
+		# Check if a fallback position can be found (player's back row)
+		var player_back_row_y = battle_grid.get_player_row_y_by_faction_row_num(1)
+		var fallback_pos = Vector2i(-1,-1)
+		if player_back_row_y != -1:
+			fallback_pos = battle_grid.find_first_empty_cell_in_row(player_back_row_y)
+		
+		if not battle_grid.is_valid_grid_position(fallback_pos):
+			if is_instance_valid(caster_node) and caster_node.has_signal("spell_cast_failed"):
+				caster_node.emit_signal("spell_cast_failed", spell_name, "No valid spawn location for reanimation.")
+			return false
+			
 	return true
 
 func get_undead_type_for_current_level() -> String:
@@ -176,11 +207,7 @@ func get_level_specific_description() -> String:
 		return "Raises a fallen creature as an Undead. (Invalid spell level for type selection)"
 	return "Raises a %s from a corpse.\nConsumes 1 Finality from the corpse." % undead_type.to_lower()
 
-# Override upgrade_spell to update current de_cost from its array
 func upgrade_spell() -> bool:
-	if super.upgrade_spell(): # This increments spell_level in SpellData
-		# The current DE cost is now fetched by get_current_de_cost(),
-		# so no need to update a singular de_cost variable here.
-		# print_debug("Reanimate '%s' upgraded to L%d. DE cost: %d. Summons: %s" % [spell_name, spell_level, get_current_de_cost(), get_undead_type_for_current_level()])
+	if super.upgrade_spell(): 
 		return true
 	return false
