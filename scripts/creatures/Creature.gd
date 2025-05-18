@@ -13,6 +13,7 @@ enum SpeedType { SLOW, NORMAL, FAST }
 
 # --- CORE ATTRIBUTES ---
 @export var creature_name: String = "Creature"
+@export var level: int = 1 : set = _set_level # ADDED: Creature level
 @export var max_health: int = 10 : set = _set_max_health
 @export var current_health: int = 10 : set = _set_current_health
 @export var attack_power: int = 1
@@ -29,7 +30,7 @@ var is_targetable: bool = true
 var grid_pos: Vector2i = Vector2i(-1, -1) : set = _set_grid_pos
 
 var reanimation_payload_data: Dictionary = {
-	"original_creature_name": "", "original_max_health": 0, "original_attack_power": 0,
+	"original_creature_name": "", "original_level": 1, "original_max_health": 0, "original_attack_power": 0, # ADDED original_level
 	"original_was_flying": false, "original_had_reach": false, "original_faction": Faction.NONE
 }
 # Finality counter is primarily for Undead, but defined here for broader access if needed.
@@ -54,7 +55,7 @@ const PIXEL_FONT_BOLD: Font = preload("res://assets/fonts/PixelOperator8-Bold.tt
 
 # UI Node References
 var stats_label: Label
-var level_label: Label # Placeholder for future use
+var level_label: Label # MODIFIED: Will now display actual level
 var ability_icons_container: HBoxContainer
 var finality_label: Label # Though primarily for Undead, declare here for potential base class use
 
@@ -79,8 +80,8 @@ func _ready():
 
 	# Connect signals for UI updates
 	health_changed.connect(_on_health_changed_ui_update)
-	# If attack_power can change dynamically, add a signal and connect it too.
-	# For now, we assume attack_power is set on init.
+	# If attack_power or level can change dynamically post-init, add signals and connect them too.
+
 
 func _setup_ui_elements():
 	var cell_half_size = BattleGrid.CELL_SIZE / 2.0 # Assuming BattleGrid.CELL_SIZE is accessible or defined
@@ -88,9 +89,7 @@ func _setup_ui_elements():
 	# --- Stats Label (Attack/Health) ---
 	stats_label = Label.new()
 	stats_label.name = "StatsLabel"
-	# Horizontal alignment will be set to RIGHT in _update_stats_label_ui before positioning
-	stats_label.set_vertical_alignment(VERTICAL_ALIGNMENT_BOTTOM) # Text grows upwards from bottom
-	# Font settings
+	stats_label.set_vertical_alignment(VERTICAL_ALIGNMENT_BOTTOM) 
 	var stats_font_settings = FontVariation.new()
 	stats_font_settings.set_base_font(PIXEL_FONT_BOLD)
 	stats_font_settings.set_variation_opentype({"size": UI_FONT_SIZE})
@@ -98,14 +97,13 @@ func _setup_ui_elements():
 	stats_label.add_theme_font_size_override("font_size", UI_FONT_SIZE)
 	stats_label.modulate = Color.WHITE
 	add_child(stats_label)
-	# Positioning is handled in _update_stats_label_ui to ensure it's correct after text changes.
 
 	# --- Level Label ---
 	level_label = Label.new()
 	level_label.name = "LevelLabel"
 	level_label.set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT)
 	level_label.set_vertical_alignment(VERTICAL_ALIGNMENT_TOP)
-	var level_font_settings = FontVariation.new() # Re-use variable name, new instance
+	var level_font_settings = FontVariation.new() 
 	level_font_settings.set_base_font(PIXEL_FONT_BOLD)
 	level_font_settings.set_variation_opentype({"size": UI_FONT_SIZE})
 	level_label.add_theme_font_override("font", level_font_settings)
@@ -117,29 +115,28 @@ func _setup_ui_elements():
 	# --- Ability Icons Container ---
 	ability_icons_container = HBoxContainer.new()
 	ability_icons_container.name = "AbilityIconsContainer"
-	# Alignment of items within HBoxContainer: END means children are pushed to the right.
 	ability_icons_container.set_alignment(BoxContainer.ALIGNMENT_END)
 	add_child(ability_icons_container)
-	# Positioning is handled in _update_ability_icons_ui.
 
 	# --- Finality Label (for Undead) ---
 	finality_label = Label.new()
 	finality_label.name = "FinalityLabel"
 	finality_label.set_horizontal_alignment(HORIZONTAL_ALIGNMENT_LEFT)
 	finality_label.set_vertical_alignment(VERTICAL_ALIGNMENT_BOTTOM)
-	var finality_font_settings = FontVariation.new() # Re-use variable name, new instance
+	var finality_font_settings = FontVariation.new() 
 	finality_font_settings.set_base_font(PIXEL_FONT_BOLD)
 	finality_font_settings.set_variation_opentype({"size": UI_FONT_SIZE})
 	finality_label.add_theme_font_override("font", finality_font_settings)
 	finality_label.add_theme_font_size_override("font_size", UI_FONT_SIZE)
 	finality_label.modulate = Color.WHITE
-	finality_label.visible = false # Hidden by default
+	finality_label.visible = false 
 	add_child(finality_label)
-	finality_label.position = Vector2(-cell_half_size + UI_PADDING, cell_half_size - UI_PADDING)
+	finality_label.position = Vector2(-cell_half_size + UI_PADDING, cell_half_size - UI_PADDING - finality_label.get_minimum_size().y)
 
 
 func _update_reanimation_payload_from_current_stats():
 	reanimation_payload_data["original_creature_name"] = creature_name
+	reanimation_payload_data["original_level"] = level # ADDED: Store original level
 	reanimation_payload_data["original_max_health"] = max_health
 	reanimation_payload_data["original_attack_power"] = attack_power
 	reanimation_payload_data["original_was_flying"] = is_flying
@@ -147,10 +144,19 @@ func _update_reanimation_payload_from_current_stats():
 	reanimation_payload_data["original_faction"] = faction
 
 # --- SETTERS ---
+func _set_level(value: int): # ADDED: Setter for level
+	var old_level = level
+	level = max(1, value)
+	if old_level != level:
+		_update_level_label_ui() # Update UI if level changes
+		_update_reanimation_payload_from_current_stats() # Ensure payload is up-to-date
+
 func _set_max_health(value: int):
 	max_health = max(1, value)
 	if current_health > max_health: _set_current_health(max_health)
 	else: emit_signal("health_changed", self, current_health, max_health)
+	_update_reanimation_payload_from_current_stats()
+
 
 func _set_current_health(value: int):
 	var old_health = current_health
@@ -172,7 +178,7 @@ func _set_finality_counter(value: int):
 	var old_finality = finality_counter
 	finality_counter = max(0, value)
 	if old_finality != finality_counter:
-		if faction == Faction.UNDEAD and has_signal("finality_changed"):
+		if faction == Faction.UNDEAD and has_signal("finality_changed"): # Assuming Undead.gd might add this signal
 			emit_signal("finality_changed", self, finality_counter)
 		_update_finality_label_ui()
 
@@ -180,8 +186,9 @@ func _set_finality_counter(value: int):
 # --- CORE METHODS ---
 func initialize_creature(config: Dictionary):
 	creature_name = config.get("creature_name", "Default Name")
+	_set_level(config.get("level", 1)) # MODIFIED: Initialize level from config
 	_set_max_health(config.get("max_health", 10))
-	_set_current_health(max_health)
+	_set_current_health(max_health) # current_health should be set after max_health
 
 	attack_power = config.get("attack_power", 1)
 	faction = config.get("faction", Faction.NONE)
@@ -192,7 +199,7 @@ func initialize_creature(config: Dictionary):
 	if config.has("finality_counter"):
 		_set_finality_counter(config.get("finality_counter", 0))
 
-	_update_reanimation_payload_from_current_stats()
+	_update_reanimation_payload_from_current_stats() # Call after all attributes are set
 	is_alive = true
 	is_targetable = true
 
@@ -203,17 +210,17 @@ func initialize_creature(config: Dictionary):
 			var loaded_texture: Texture2D = load(texture_path)
 			if is_instance_valid(loaded_texture):
 				local_sprite_node.texture = loaded_texture
-				local_sprite_node.scale = Vector2(1,1) # Assuming sprites are designed for the cell size
+				local_sprite_node.scale = Vector2(1,1) 
 			else:
 				printerr("Creature '%s': Loaded resource at '%s' is NOT a valid Texture2D." % [creature_name, texture_path])
-				local_sprite_node.texture = load("res://icon.svg")
+				local_sprite_node.texture = load("res://icon.svg") # Fallback
 		else:
 			printerr("Creature '%s': Texture path NOT FOUND: '%s'." % [creature_name, texture_path])
-			local_sprite_node.texture = load("res://icon.svg")
+			local_sprite_node.texture = load("res://icon.svg") # Fallback
 	else:
 		printerr("Creature '%s': CRITICAL - Sprite node (child 'Sprite') MISSING." % creature_name)
 	
-	_update_all_ui_elements()
+	_update_all_ui_elements() # Ensure UI reflects initial state
 
 
 func take_damage(amount: int):
@@ -223,6 +230,7 @@ func take_damage(amount: int):
 func die():
 	if not is_alive: return
 	is_alive = false; is_targetable = false
+	# Hide UI elements on death
 	if is_instance_valid(stats_label): stats_label.visible = false
 	if is_instance_valid(level_label): level_label.visible = false
 	if is_instance_valid(ability_icons_container): ability_icons_container.visible = false
@@ -232,20 +240,27 @@ func die():
 func can_attack_target(target_creature: Creature) -> bool:
 	if not is_instance_valid(target_creature) or not target_creature.is_alive or not target_creature.is_targetable: return false
 	if not self.is_alive: return false
+	# Prevent attacking same faction, unless faction is NONE (e.g. neutral entities if any)
 	if target_creature.faction == self.faction and self.faction != Faction.NONE: return false
+	# Handle flying vs non-flying/reach
 	if target_creature.is_flying and not self.is_flying and not self.has_reach: return false
 	return true
 
 func get_tooltip_info() -> Dictionary:
 	return {
-		"name": creature_name, "health": "%d/%d" % [current_health, max_health], "attack": attack_power,
+		"name": creature_name, "level": level, "health": "%d/%d" % [current_health, max_health], "attack": attack_power, # ADDED level
 		"speed": SpeedType.keys()[speed_type].to_lower(), "is_flying": is_flying, "has_reach": has_reach,
 		"faction": Faction.keys()[faction],
 		"finality": finality_counter if faction == Faction.UNDEAD else "N/A"
 	}
 
 func get_data_for_corpse_creation() -> Dictionary:
+	# Ensure the payload is up-to-date before returning
+	_update_reanimation_payload_from_current_stats()
 	var corpse_data = reanimation_payload_data.duplicate(true)
+	# If this creature is Undead, its current finality is passed along.
+	# This is handled in Undead.gd or when GameManager creates CorpseData.
+	# For now, ensure the base payload is correct.
 	if self.faction == Faction.UNDEAD:
 		corpse_data["current_finality_counter_on_death"] = self.finality_counter
 	return corpse_data
@@ -262,47 +277,41 @@ func _update_all_ui_elements():
 
 func _update_stats_label_ui():
 	if not is_instance_valid(stats_label): return
-	stats_label.text = "%d/%d" % [attack_power, current_health]
-	if current_health < max_health:
-		stats_label.modulate = Color.RED
+	stats_label.text = "%d/%d" % [attack_power, current_health] # AP / CurrentHP
+	if current_health < max_health: # Simple visual cue for damage
+		stats_label.modulate = Color.ORANGE_RED # More distinct than just RED
 	else:
 		stats_label.modulate = Color.WHITE
 
 	stats_label.set_horizontal_alignment(HORIZONTAL_ALIGNMENT_RIGHT)
-	
-	# MODIFICATION: Explicitly set the label's size to its minimum required size.
-	# This helps ensure that 'label_size' used for positioning is accurate after text changes.
 	var min_size = stats_label.get_minimum_size()
 	stats_label.size = min_size 
 
-	# Now use the label's actual size for positioning
 	var label_size = stats_label.size 
 	var cell_half_size = BattleGrid.CELL_SIZE / 2.0
 
-	# Position the label so its bottom-right corner is at the desired padded location.
-	# The label's 'position' property refers to its top-left corner.
 	stats_label.position = Vector2(
-		(cell_half_size - UI_PADDING) - label_size.x,  # X: (Cell_Right_Edge - Padding) - Label_Width
-		(cell_half_size - UI_PADDING) - label_size.y   # Y: (Cell_Bottom_Edge - Padding) - Label_Height
+		(cell_half_size - UI_PADDING) - label_size.x,  
+		(cell_half_size - UI_PADDING) - label_size.y   
 	)
 
-func _update_level_label_ui():
+func _update_level_label_ui(): # MODIFIED: Update to show actual level
 	if not is_instance_valid(level_label): return
-	level_label.text = "Lvl 1" # Placeholder for now
+	level_label.text = "L%d" % level # Display current level
 
 func _update_ability_icons_ui():
 	if not is_instance_valid(ability_icons_container): return
 
-	# Clear existing icons
 	for child in ability_icons_container.get_children():
 		child.queue_free()
 
 	var cell_half_size = BattleGrid.CELL_SIZE / 2.0
-	var number_of_icons = 0 # Keep track of actual icons added
+	var number_of_icons = 0
 
-	# Speed Icon
 	var speed_icon_node = TextureRect.new()
 	speed_icon_node.custom_minimum_size = Vector2(UI_ICON_SIZE, UI_ICON_SIZE)
+	speed_icon_node.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	speed_icon_node.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	match speed_type:
 		SpeedType.SLOW: speed_icon_node.texture = icon_texture_speed_slow
 		SpeedType.NORMAL: speed_icon_node.texture = icon_texture_speed_normal
@@ -310,31 +319,31 @@ func _update_ability_icons_ui():
 	ability_icons_container.add_child(speed_icon_node)
 	number_of_icons += 1
 
-	# Flying Icon
 	if is_flying:
 		var flying_icon_node = TextureRect.new()
 		flying_icon_node.texture = icon_texture_flying
 		flying_icon_node.custom_minimum_size = Vector2(UI_ICON_SIZE, UI_ICON_SIZE)
+		flying_icon_node.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		flying_icon_node.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ability_icons_container.add_child(flying_icon_node)
 		number_of_icons += 1
 
-	# Reach Icon
 	if has_reach:
 		var reach_icon_node = TextureRect.new()
 		reach_icon_node.texture = icon_texture_reach
 		reach_icon_node.custom_minimum_size = Vector2(UI_ICON_SIZE, UI_ICON_SIZE)
+		reach_icon_node.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		reach_icon_node.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ability_icons_container.add_child(reach_icon_node)
 		number_of_icons += 1
 
-	# If no icons, hide the container and stop
 	if number_of_icons == 0:
 		ability_icons_container.visible = false
 		return
 	else:
-		ability_icons_container.visible = true # Ensure visible if there are icons
+		ability_icons_container.visible = true
 
 	var separation = ability_icons_container.get_theme_constant("separation", "HBoxContainer")
-	
 	var container_width = (number_of_icons * UI_ICON_SIZE)
 	if number_of_icons > 1: 
 		container_width += (number_of_icons - 1) * separation
@@ -347,5 +356,15 @@ func _update_ability_icons_ui():
 
 func _update_finality_label_ui():
 	if not is_instance_valid(finality_label): return
-	if finality_label.visible: 
+	if faction == Faction.UNDEAD and is_alive:
 		finality_label.text = str(finality_counter)
+		finality_label.visible = true
+		# Adjust position based on its new text size
+		var min_finality_size = finality_label.get_minimum_size()
+		var cell_half_size = BattleGrid.CELL_SIZE / 2.0
+		finality_label.position = Vector2(
+			-cell_half_size + UI_PADDING, 
+			(cell_half_size - UI_PADDING) - min_finality_size.y 
+		)
+	else:
+		finality_label.visible = false

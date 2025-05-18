@@ -9,10 +9,10 @@ I'd like your help with the following changes:
 **Desired Changes:**
 
 1.  **\[Change 1 Description]:**
-    * *\[Specific detail or requirement for Change 1]*
-    * *\[Another specific detail or relevant file/script if known]*
+	* *\[Specific detail or requirement for Change 1]*
+	* *\[Another specific detail or relevant file/script if known]*
 2.  **\[Change 2 Description]:**
-    * *\[Specific detail or requirement for Change 2]*
+	* *\[Specific detail or requirement for Change 2]*
 3.  **\[Add more changes as needed]**
 
 **Our Process:**
