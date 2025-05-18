@@ -99,7 +99,7 @@ func _setup_ui_elements():
 	# Position: Bottom-right of the 64x64 tile.
 	# Creature origin is center of 64x64 cell. So cell half-width/height is CELL_SIZE / 2.0
 	var cell_half_size = BattleGrid.CELL_SIZE / 2.0
-	stats_label.position = Vector2(cell_half_size - UI_PADDING, cell_half_size - UI_PADDING)
+	# stats_label.position = Vector2(cell_half_size - UI_PADDING, cell_half_size - UI_PADDING) // Positioned in _update_stats_label_ui now
 	# Since the label is aligned bottom-right, its position is its bottom-right corner.
 
 	# --- Level Label ---
@@ -221,15 +221,19 @@ func initialize_creature(config: Dictionary):
 			var loaded_texture: Texture2D = load(texture_path)
 			if is_instance_valid(loaded_texture):
 				local_sprite_node.texture = loaded_texture
-				var texture_size = loaded_texture.get_size()
-				if texture_size.x > 0 and texture_size.y > 0 and is_instance_valid(battle_grid):
-					var cell_s = float(BattleGrid.CELL_SIZE)
-					var scale_x = cell_s / texture_size.x
-					var scale_y = cell_s / texture_size.y
-					var final_scale = min(scale_x, scale_y)
-					local_sprite_node.scale = Vector2(final_scale, final_scale)
-				elif not is_instance_valid(battle_grid):
-					printerr("Creature '%s': BattleGrid reference missing, cannot calculate scale for sprite." % creature_name)
+				# --- NO SCALING LOGIC ---
+				# Assuming sprites are now natively 128x128 (or desired size for the cell)
+				# and should be centered. The Creature node itself is centered in the cell.
+				# The sprite is a child of Creature, so its local position (0,0) and scale (1,1)
+				# should display it correctly if its native size matches CELL_SIZE.
+				local_sprite_node.scale = Vector2(1,1) # Ensure scale is reset to default
+				# If your sprites are not exactly CELL_SIZE (e.g., 128x128), but you want them centered:
+				# var texture_size = loaded_texture.get_size()
+				# local_sprite_node.position = -texture_size / 2.0 # This centers the sprite's own origin
+				# However, if the sprite node's origin is already centered (e.g. via offset property in Sprite2D),
+				# then local_sprite_node.position = Vector2.ZERO is fine.
+				# For simplicity, if sprites are 128x128, their natural centering as a child node at (0,0) is usually what's intended.
+				# --- END NO SCALING LOGIC ---
 			else:
 				printerr("Creature '%s': Loaded resource at '%s' is NOT a valid Texture2D. Using default." % [creature_name, texture_path])
 				local_sprite_node.texture = load("res://icon.svg")
@@ -298,6 +302,23 @@ func _update_stats_label_ui():
 		stats_label.modulate = Color.RED # Damaged health in red
 	else:
 		stats_label.modulate = Color.WHITE # Full health in white
+
+	# New positioning logic for stats_label:
+	# Ensure the label has its size calculated based on the new text and font.
+	# This might require a brief moment or deferral if called immediately after scene load.
+	# get_minimum_size() should give the size the label wants to be.
+	var label_size = stats_label.get_minimum_size()
+	var cell_half_size = BattleGrid.CELL_SIZE / 2.0
+
+	# Target bottom-right corner for the label's bounding box, with padding
+	var target_br_x = cell_half_size - UI_PADDING
+	var target_br_y = cell_half_size - UI_PADDING
+
+	# Calculate the top-left position for the label
+	stats_label.position = Vector2(
+		target_br_x - label_size.x,
+		target_br_y - label_size.y
+	)
 
 func _update_level_label_ui():
 	if not is_instance_valid(level_label): return
