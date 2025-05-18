@@ -1,0 +1,24 @@
+**Subject: Godot Game Project Update Request: \[Briefly Mention Focus of Changes]**
+
+Hi Gemini,
+
+I'm working on my Godot game project, "Arisen" (a turn-based strategy game with necromancy elements), using **Godot version 4.1.1**. I have my complete project code and folder structure available (which you should have from previous interactions/uploads: `directory_listing.txt` and `project_code_and_scenes.txt`).
+
+I'd like your help with the following changes:
+
+**Desired Changes:**
+
+1.  **\[Change 1 Description]:**
+    * *\[Specific detail or requirement for Change 1]*
+    * *\[Another specific detail or relevant file/script if known]*
+2.  **\[Change 2 Description]:**
+    * *\[Specific detail or requirement for Change 2]*
+3.  **\[Add more changes as needed]**
+
+**Our Process:**
+
+* Please **ask me clarifying questions first** if anything is unclear about these requested changes.
+* Once we've clarified the requirements, we can discuss the **approach** you'll take to implement them.
+* When you're ready to provide code, please generate the **entire code files needed** or clearly specify the **exact code segments to change** in the relevant files.
+
+Let me know what questions you have about these changes, or if you're ready to discuss the approach!
