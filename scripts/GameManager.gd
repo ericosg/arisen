@@ -7,8 +7,9 @@ signal turn_started(turn_number: int)
 signal wave_started(wave_number: int, turn_number: int)
 signal player_phase_started(phase_name: String) 
 signal battle_phase_started
-signal wave_ended(wave_number: int, turn_number: int)
-signal turn_ended(turn_number: int)
+signal wave_ended(wave_number: int, turn_number: int) 
+signal turn_finalized(turn_number: int) 
+
 signal game_over(reason_key: String, message: String) 
 signal human_population_changed(new_population: int)
 signal corpse_added(corpse: CorpseData)
@@ -18,23 +19,25 @@ signal undead_roster_changed(new_roster: Array[Creature])
 signal game_event_log_requested(message: String, color_tag: String)
 
 
-# --- GAME STATE ENUMS ---
+# --- GAME STATE ENUMS (Updated) ---
 enum GamePhase { 
-	NONE,                
-	OUT_OF_TURN,         
-	TURN_STARTING,       
-	PLAYER_PRE_BATTLE,   
-	BATTLE_IN_PROGRESS,  
-	PLAYER_POST_BATTLE,  
-	WAVE_ENDING,         
-	TURN_ENDING          
+	NONE,                   
+	OUT_OF_TURN,            
+	TURN_STARTING,          
+	TURN_AWAITING_FIRST_WAVE, 
+	PLAYER_PRE_BATTLE,      
+	BATTLE_IN_PROGRESS,     
+	PLAYER_POST_BATTLE,     
+	WAVE_CONCLUDED_AWAITING_NEXT, 
+	TURN_ENDING_AWAIT_CONFIRM, 
+	TURN_ENDING             
 }
 
 # --- CORE GAME VARIABLES ---
 var current_turn: int = 0
 var current_wave_in_turn: int = 0
-var max_waves_per_turn: int = 5 
-var waves_with_new_aliens: int = 3 
+var max_waves_per_turn: int = 3 
+var waves_with_new_aliens: int = 2 
 var human_civilian_population: int = 1000 : set = _set_human_civilian_population
 const INITIAL_HUMAN_POPULATION: int = 1000
 var current_game_phase: GamePhase = GamePhase.NONE
@@ -98,46 +101,59 @@ func start_new_game():
 	if not is_instance_valid(units_container_node): printerr("GM: UnitsContainerNode missing at start_new_game!"); get_tree().quit(); return
 	
 	_change_game_phase(GamePhase.OUT_OF_TURN)
+	# Emit player_phase_started so Game.gd updates the UI for the very start of the game
+	emit_signal("player_phase_started", "OUT_OF_TURN")
 
-func proceed_to_next_turn():
-	if current_game_phase != GamePhase.OUT_OF_TURN and current_game_phase != GamePhase.TURN_ENDING and current_game_phase != GamePhase.NONE:
-		return
+
+# Player initiates turn start
+func player_starts_new_turn():
+	if current_game_phase != GamePhase.OUT_OF_TURN: return
+	
+	_change_game_phase(GamePhase.TURN_STARTING) 
 	
 	current_turn += 1
 	current_wave_in_turn = 0 
 	emit_signal("turn_started", current_turn) 
-	_change_game_phase(GamePhase.TURN_STARTING)
 	
 	if is_instance_valid(necromancer_node):
 		necromancer_node.replenish_de_to_max() 
 		
-	_spawn_new_human_contingent()
-	proceed_to_next_wave() 
+	_spawn_new_human_contingent() 
+	
+	_change_game_phase(GamePhase.TURN_AWAITING_FIRST_WAVE)
+	emit_signal("player_phase_started", "TURN_AWAITING_FIRST_WAVE") 
 
-func proceed_to_next_wave():
-	if current_game_phase != GamePhase.TURN_STARTING and \
-	   current_game_phase != GamePhase.PLAYER_POST_BATTLE and \
-	   current_game_phase != GamePhase.WAVE_ENDING:
+# Player initiates wave start (first or subsequent)
+func player_starts_wave():
+	if current_game_phase != GamePhase.TURN_AWAITING_FIRST_WAVE and \
+	   current_game_phase != GamePhase.WAVE_CONCLUDED_AWAITING_NEXT:
 		return
 
-	current_wave_in_turn += 1
-	if current_wave_in_turn > max_waves_per_turn:
-		_end_current_turn() 
+	current_wave_in_turn += 1 
+	
+	if current_wave_in_turn > max_waves_per_turn and current_game_phase == GamePhase.WAVE_CONCLUDED_AWAITING_NEXT:
+		# This case should ideally be prevented by UI button state, but as a fallback:
+		emit_signal("game_event_log_requested", "Max waves for turn reached. Please end turn.", "yellow")
+		# Force transition to end turn confirmation if somehow attempted
+		_change_game_phase(GamePhase.TURN_ENDING_AWAIT_CONFIRM)
+		emit_signal("player_phase_started", "TURN_ENDING_AWAIT_CONFIRM")
 		return
-		
+
 	emit_signal("wave_started", current_wave_in_turn, current_turn) 
 	
-	if current_wave_in_turn <= waves_with_new_aliens:
+	if current_wave_in_turn <= waves_with_new_aliens: 
 		_spawn_new_alien_wave()
 		
-	_change_game_phase(GamePhase.PLAYER_PRE_BATTLE)
+	_change_game_phase(GamePhase.PLAYER_PRE_BATTLE) 
 	emit_signal("player_phase_started", "PRE_BATTLE") 
 
+# Player finishes pre-battle setup
 func player_ends_pre_battle_phase():
 	if current_game_phase != GamePhase.PLAYER_PRE_BATTLE: return
-	emit_signal("game_event_log_requested", "Player ends pre-battle preparations.", "white")
+	emit_signal("game_event_log_requested", "Player ends pre-battle preparations for Wave %d." % current_wave_in_turn, "white")
 	_initiate_battle_phase()
 
+# Internal: Battle processing
 func _initiate_battle_phase():
 	_change_game_phase(GamePhase.BATTLE_IN_PROGRESS)
 	emit_signal("battle_phase_started") 
@@ -151,40 +167,57 @@ func _initiate_battle_phase():
 	_change_game_phase(GamePhase.PLAYER_POST_BATTLE)
 	emit_signal("player_phase_started", "POST_BATTLE_REANIMATE")
 
+# Player finishes post-battle actions
 func player_ends_post_battle_phase():
 	if current_game_phase != GamePhase.PLAYER_POST_BATTLE: return
-	emit_signal("game_event_log_requested", "Player ends post-battle actions.", "white")
-	_end_current_wave()
+	emit_signal("game_event_log_requested", "Player ends post-battle actions for Wave %d." % current_wave_in_turn, "white")
+	_conclude_wave_processing()
 
-func _end_current_wave():
-	emit_signal("wave_ended", current_wave_in_turn, current_turn)
-	_change_game_phase(GamePhase.WAVE_ENDING)
+
+# Internal: After player's post-battle actions, decide next step
+func _conclude_wave_processing():
+	emit_signal("wave_ended", current_wave_in_turn, current_turn) # Game.gd uses this for logging
 	
 	if human_civilian_population <= 0 and current_game_phase != GamePhase.NONE:
-		return
+		return 
 
 	var aliens_remain_on_grid = living_aliens_on_grid.size() > 0
-	var more_aliens_expected_this_turn = current_wave_in_turn < waves_with_new_aliens
+	var all_configured_alien_waves_done = current_wave_in_turn >= waves_with_new_aliens
 	
-	if not aliens_remain_on_grid and not more_aliens_expected_this_turn:
-		emit_signal("game_event_log_requested", "All alien waves cleared for this turn.", "green")
-		_end_current_turn()
+	if current_wave_in_turn >= max_waves_per_turn or \
+	  (not aliens_remain_on_grid and all_configured_alien_waves_done):
+		if not aliens_remain_on_grid and all_configured_alien_waves_done and current_wave_in_turn < max_waves_per_turn :
+			emit_signal("game_event_log_requested", "All alien threats neutralized for this turn.", "green")
+		_change_game_phase(GamePhase.TURN_ENDING_AWAIT_CONFIRM) 
+		emit_signal("player_phase_started", "TURN_ENDING_AWAIT_CONFIRM") # UI update for "End Turn" button
+	else:
+		_change_game_phase(GamePhase.WAVE_CONCLUDED_AWAITING_NEXT) 
+		emit_signal("player_phase_started", "WAVE_CONCLUDED_AWAITING_NEXT") # UI update for "Start Next Wave" button
 
-func _end_current_turn():
-	_change_game_phase(GamePhase.TURN_ENDING)
+
+# Player confirms ending the turn
+func player_confirms_end_turn():
+	if current_game_phase != GamePhase.TURN_ENDING_AWAIT_CONFIRM: return
+	_finalize_turn_end_procedures()
+
+
+# Internal: Final steps to end the turn
+func _finalize_turn_end_procedures():
+	_change_game_phase(GamePhase.TURN_ENDING) 
 	
 	for corpse_to_remove in available_corpses.duplicate(): 
 		_remove_corpse_from_list(corpse_to_remove, "decayed at turn end") 
 	
-	emit_signal("turn_ended", current_turn) 
+	emit_signal("turn_finalized", current_turn) 
 	
 	if current_turn >= 20 and human_civilian_population > 0: 
 		_set_game_over("player_won", "Survived all turns!") 
 		return
-	if human_civilian_population <= 0 and current_game_phase != GamePhase.NONE: 
-		return
-		
-	_change_game_phase(GamePhase.OUT_OF_TURN) 
+
+	if current_game_phase != GamePhase.NONE: 
+		_change_game_phase(GamePhase.OUT_OF_TURN) 
+		emit_signal("player_phase_started", "OUT_OF_TURN") # UI update for "Start Turn X+1" button
+
 
 func _set_human_civilian_population(value: int):
 	var old_pop = human_civilian_population
@@ -196,6 +229,7 @@ func _set_human_civilian_population(value: int):
 
 func _change_game_phase(new_phase: GamePhase):
 	if current_game_phase != new_phase:
+		# print_debug("GamePhase: %s -> %s (Turn: %d, Wave: %d)" % [GamePhase.keys()[current_game_phase], GamePhase.keys()[new_phase], current_turn, current_wave_in_turn])
 		current_game_phase = new_phase
 
 func _set_game_over(reason_key: String, message: String): 
@@ -426,7 +460,33 @@ func _remove_corpse_from_list(corpse: CorpseData, reason: String = "removed"):
 		available_corpses.erase(corpse)
 		emit_signal("corpse_removed", corpse)
 
-# --- COMBAT RESOLUTION (Corrected Pass-Through Rule) ---
+# --- Helper Functions for Combat Resolution ---
+func _find_foremost_player_defender(col_idx: int, rows_to_check: Array) -> Creature:
+	for r_y in rows_to_check:
+		if r_y == -1: continue
+		var c = battle_grid_node.get_creature_at(Vector2i(col_idx, r_y))
+		if is_instance_valid(c) and c.is_alive and (c.faction == Creature.Faction.HUMAN or c.faction == Creature.Faction.UNDEAD):
+			return c
+	return null
+
+func _find_foremost_alien_attacker(col_idx: int, rows_to_check: Array, exclude_list: Array[Creature]) -> Creature:
+	for r_y in rows_to_check:
+		if r_y == -1: continue
+		var c = battle_grid_node.get_creature_at(Vector2i(col_idx, r_y))
+		if is_instance_valid(c) and c.is_alive and c.faction == Creature.Faction.ALIEN:
+			if not c in exclude_list:
+				return c
+	return null
+
+func _handle_alien_pass_through_action(alien_unit: Creature, reason_prefix: String):
+	var damage = alien_unit.level * alien_unit.attack_power * randi_range(1, 10)
+	var log_message = "%s '%s' (L%d AP%d) passed, dealing %d dmg to population." % [reason_prefix, alien_unit.creature_name, alien_unit.level, alien_unit.attack_power, damage]
+	emit_signal("game_event_log_requested", log_message, "red")
+	_set_human_civilian_population(human_civilian_population - damage)
+	_remove_creature_from_game(alien_unit, reason_prefix.to_lower() + " and passed")
+
+
+# --- COMBAT RESOLUTION (Pass-Through Rule Further Corrected) ---
 func _resolve_combat_in_lane(col_idx: int) -> bool:
 	var activity_in_lane = false 
 	
@@ -441,56 +501,36 @@ func _resolve_combat_in_lane(col_idx: int) -> bool:
 		battle_grid_node.get_alien_row_y_by_faction_row_num(1)  
 	]
 
-	while true: 
-		var player_unit: Creature = null
-		for r_y in player_rows_to_check_for_defender:
-			if r_y == -1: continue
-			var c = battle_grid_node.get_creature_at(Vector2i(col_idx, r_y))
-			if is_instance_valid(c) and c.is_alive and (c.faction == Creature.Faction.HUMAN or c.faction == Creature.Faction.UNDEAD):
-				player_unit = c
-				break 
+	var aliens_that_have_fought_this_wave_in_lane: Array[Creature] = []
 
-		var alien_unit: Creature = null
-		for r_y in alien_rows_to_check_for_attacker:
-			if r_y == -1: continue
-			var c = battle_grid_node.get_creature_at(Vector2i(col_idx, r_y))
-			if is_instance_valid(c) and c.is_alive and c.faction == Creature.Faction.ALIEN:
-				alien_unit = c
-				break 
+	while true: 
+		var player_unit = _find_foremost_player_defender(col_idx, player_rows_to_check_for_defender)
+		var alien_unit = _find_foremost_alien_attacker(col_idx, alien_rows_to_check_for_attacker, aliens_that_have_fought_this_wave_in_lane)
 
 		if not is_instance_valid(alien_unit):
-			break # No more aliens in this column.
+			break 
 
 		activity_in_lane = true
 
-		# Scenario 1: Alien is unblocked (no player unit in the column)
 		if not is_instance_valid(player_unit):
-			var damage = alien_unit.level * alien_unit.attack_power * randi_range(1, 10)
-			emit_signal("game_event_log_requested", "Alien '%s' (L%d AP%d) passed UNBLOCKED, dealing %d dmg to population." % [alien_unit.creature_name, alien_unit.level, alien_unit.attack_power, damage], "red")
-			_set_human_civilian_population(human_civilian_population - damage)
-			_remove_creature_from_game(alien_unit, "passed (unblocked)")
+			_handle_alien_pass_through_action(alien_unit, "Alien") 
 			if human_civilian_population <= 0: return true 
-			continue # Process next alien in the column if any.
+			continue 
 
-		# Scenario 2: Alien and Player unit exist.
 		var p_name = player_unit.creature_name; var p_lvl = player_unit.level
 		var a_name = alien_unit.creature_name; var a_lvl = alien_unit.level
 		var p_fac_str = Creature.Faction.keys()[player_unit.faction]
 		var a_fac_str = Creature.Faction.keys()[alien_unit.faction]
 
-		# Scenario 2a: Flying Alien bypasses non-flying/non-reach Defender
 		if alien_unit.is_flying and not player_unit.is_flying and not player_unit.has_reach:
-			if alien_unit.grid_pos.y < player_unit.grid_pos.y : 
+			if alien_unit.grid_pos.y <= player_unit.grid_pos.y: 
 				emit_signal("game_event_log_requested", "%s '%s' (L%d) flies over %s '%s' (L%d)!" % [a_fac_str, a_name, a_lvl, p_fac_str, p_name, p_lvl], "yellow")
-				var damage = alien_unit.level * alien_unit.attack_power * randi_range(1, 10)
-				emit_signal("game_event_log_requested", "Flying Alien '%s' (L%d AP%d) BYPASSED, dealing %d dmg to population." % [a_name, a_lvl, alien_unit.attack_power, damage], "red")
-				_set_human_civilian_population(human_civilian_population - damage)
-				_remove_creature_from_game(alien_unit, "passed (flew over)")
+				_handle_alien_pass_through_action(alien_unit, "Flying Alien") 
 				if human_civilian_population <= 0: return true 
-				continue # Process next alien in the column.
+				continue 
 		
-		# Scenario 2b: Standard Combat - Alien is BLOCKED.
-		# Alien attacks player, player attacks alien. No population damage from this direct combat.
+		aliens_that_have_fought_this_wave_in_lane.append(alien_unit) 
+		
 		var p_hp_old = player_unit.current_health; var p_ap = player_unit.attack_power
 		var a_hp_old = alien_unit.current_health; var a_ap = alien_unit.attack_power
 
@@ -503,7 +543,7 @@ func _resolve_combat_in_lane(col_idx: int) -> bool:
 		else:
 			emit_signal("game_event_log_requested", " -> %s cannot attack %s." % [p_name, a_name], "gray")
 
-		if alien_unit.is_alive: # Alien only attacks if it survived player's attack
+		if alien_unit.is_alive: 
 			if alien_unit.can_attack_target(player_unit):
 				emit_signal("game_event_log_requested", " -> %s attacks %s (HP:%d)." % [a_name, p_name, p_hp_old], "white")
 				player_unit.take_damage(a_ap)
@@ -511,20 +551,13 @@ func _resolve_combat_in_lane(col_idx: int) -> bool:
 			else:
 				emit_signal("game_event_log_requested", " -> %s cannot attack %s." % [a_name, p_name], "gray")
 		
-		# If player unit died, the next iteration of the while loop for this column
-		# will find no player_unit, and the current alien_unit (if alive) or a subsequent one
-		# will then "pass through unblocked".
-		# If alien unit died, the next iteration will find the next alien.
-		# If both survived, this specific combat pairing is done.
-		if (is_instance_valid(player_unit) and not player_unit.is_alive) or \
-		   (is_instance_valid(alien_unit) and not alien_unit.is_alive):
-			pass # Continue the while loop to re-evaluate the lane.
-		else:
-			# Both survived, the alien was blocked. End processing for this column in this wave's combat phase.
-			# Any aliens further back in the same column are also considered blocked by this engagement.
+		if player_unit.is_alive and alien_unit.is_alive:
 			break 
+		else:
+			pass 
 			
 	return activity_in_lane
+
 
 # --- UTILITY / GETTER METHODS ---
 func get_available_corpses() -> Array[CorpseData]:

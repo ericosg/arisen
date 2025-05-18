@@ -24,15 +24,14 @@ extends Node
 @onready var ui_reanimate_upgrade_button: Button = $UI/ReanimateUpgrade
 @onready var ui_soul_drain_upgrade_button: Button = $UI/SoulDrainUpgrade
 
-@onready var ui_proceed_button: Button = $UI/GameStartButton 
+@onready var ui_proceed_button: Button = $UI/GameStartButton # This is the main progression button
 
 @onready var ui_game_over_panel: Panel = $UI/GameOver
 @onready var ui_game_over_status_label: Label = $UI/GameOver/Status
 @onready var ui_game_over_restart_button: Button = $UI/GameOver/Restart
-
-# --- UI PLACEHOLDERS ---
-var ui_human_population_label: Label 
-var ui_turn_wave_label: Label      
+ 
+@onready var ui_human_population_label: Label = $UI/HumanPopulationLabel
+@onready var ui_turn_wave_label: Label = $UI/TurnWaveLabel     
 
 # --- Spell Instances ---
 var reanimate_spell_instance: SpellReanimateData
@@ -43,13 +42,10 @@ var current_reanimate_subtype_selection_index: int = 0
 
 # --- Game Log ---
 var game_log_messages: Array[String] = []
-const MAX_LOG_LINES: int = 15 
+const MAX_LOG_LINES: int = 20 # Increased log lines
 
 
 func _ready():
-	ui_human_population_label = get_node_or_null("UI/HumanPopulationLabel") as Label 
-	ui_turn_wave_label = get_node_or_null("UI/TurnWaveLabel") as Label 
-
 	if not is_instance_valid(game_manager_node): printerr("Game.gd: GameManagerNode missing."); get_tree().quit(); return
 	if not is_instance_valid(necromancer_node): printerr("Game.gd: NecromancerNode missing."); get_tree().quit(); return
 	if not is_instance_valid(battle_grid_node): printerr("Game.gd: BattleGridNode missing."); get_tree().quit(); return
@@ -78,23 +74,20 @@ func _ready():
 	
 	_update_necromancer_labels_from_node() 
 	_update_all_spell_related_ui()     
-	_update_proceed_button_text()
+	_update_proceed_button_ui() # Changed from _update_proceed_button_text to a more general UI update
 
 
 func _connect_game_signals():
 	if is_instance_valid(game_manager_node):
-		if is_instance_valid(ui_human_population_label): 
-			game_manager_node.human_population_changed.connect(_on_human_population_changed)
-		if is_instance_valid(ui_turn_wave_label): 
-			game_manager_node.turn_started.connect(_on_turn_or_wave_changed) 
-			game_manager_node.wave_started.connect(_on_wave_started_log) 
-		if is_instance_valid(ui_game_over_panel) and is_instance_valid(ui_game_over_status_label):
-			game_manager_node.game_over.connect(_on_game_over) 
+		game_manager_node.human_population_changed.connect(_on_human_population_changed)
+		game_manager_node.turn_started.connect(_on_turn_started_ui_update) 
+		game_manager_node.wave_started.connect(_on_wave_started_ui_update) 
+		game_manager_node.game_over.connect(_on_game_over) 
 		
-		game_manager_node.player_phase_started.connect(_on_player_phase_started)
-		game_manager_node.battle_phase_started.connect(_on_battle_phase_started) 
-		game_manager_node.wave_ended.connect(_on_wave_ended_log) 
-		game_manager_node.turn_ended.connect(_on_turn_ended_log) 
+		game_manager_node.player_phase_started.connect(_on_player_phase_started_ui_update)
+		game_manager_node.battle_phase_started.connect(_on_battle_phase_started_ui_update) 
+		game_manager_node.wave_ended.connect(_on_wave_ended_ui_update) 
+		game_manager_node.turn_finalized.connect(_on_turn_finalized_ui_update) # Changed from turn_ended
 		
 		if game_manager_node.has_signal("game_event_log_requested"): 
 			game_manager_node.game_event_log_requested.connect(_on_game_manager_event_logged)
@@ -124,12 +117,13 @@ func _log_message(message: String, color_name: String = "white"):
 	var bbcode_message = message
 	var final_color_name = color_name.to_lower()
 	match final_color_name:
-		"green", "red", "yellow", "white": bbcode_message = "[color=%s]%s[/color]" % [final_color_name, message]
+		"green", "red", "yellow", "white", "gray", "orange": # Added more colors
+			bbcode_message = "[color=%s]%s[/color]" % [final_color_name, message]
 		_: bbcode_message = "[color=white]%s[/color]" % message 
 	
 	if final_color_name == "red" and not message.begins_with("ERROR:"): 
 		printerr("GAME LOG (UI: %s): %s" % [final_color_name, message])
-	else: print("GAME LOG (UI: %s): %s" % [final_color_name, message])
+	# else: print("GAME LOG (UI: %s): %s" % [final_color_name, message]) # Reduce console spam
 
 	game_log_messages.append(bbcode_message) 
 	if game_log_messages.size() > MAX_LOG_LINES: game_log_messages.pop_front() 
@@ -140,7 +134,7 @@ func _on_spell_cast_failed_ui_log(spell_name: String, reason: String):
 	_log_message("Cast %s failed: %s" % [spell_name, reason], "red")
 	_update_all_spell_related_ui() 
 func _on_spell_cast_succeeded_ui_log(spell_name: String):
-	_log_message("%s cast successfully." % spell_name, "white") 
+	_log_message("%s cast successfully." % spell_name, "green") # Changed to green
 	_update_all_spell_related_ui() 
 
 # --- UI UPDATE & BUTTON HANDLER FUNCTIONS ---
@@ -154,14 +148,17 @@ func _update_necromancer_labels_from_node():
 func _update_all_spell_related_ui():
 	if not is_instance_valid(necromancer_node) or not is_instance_valid(game_manager_node): return
 
-	var reanimate_spell = necromancer_node.get_spell_by_name("Reanimate") as SpellReanimateData # Cast for subtype methods
-	var soul_drain_spell = necromancer_node.get_spell_by_name("Soul Drain") as SpellSoulDrainData # Cast for consistency
+	var reanimate_spell = necromancer_node.get_spell_by_name("Reanimate") as SpellReanimateData
+	var soul_drain_spell = necromancer_node.get_spell_by_name("Soul Drain") as SpellSoulDrainData
 
-	var can_cast_in_phase = (game_manager_node.current_game_phase == GameManager.GamePhase.PLAYER_PRE_BATTLE or \
-						   game_manager_node.current_game_phase == GameManager.GamePhase.PLAYER_POST_BATTLE)
-	var can_upgrade_in_phase = (game_manager_node.current_game_phase == GameManager.GamePhase.OUT_OF_TURN)
+	var current_gm_phase = game_manager_node.current_game_phase
+	var can_cast_in_phase = (current_gm_phase == GameManager.GamePhase.PLAYER_PRE_BATTLE or \
+						   current_gm_phase == GameManager.GamePhase.PLAYER_POST_BATTLE or \
+						   current_gm_phase == GameManager.GamePhase.TURN_AWAITING_FIRST_WAVE) # Allow casting before first wave
+	var can_upgrade_in_phase = (current_gm_phase == GameManager.GamePhase.OUT_OF_TURN or \
+							  current_gm_phase == GameManager.GamePhase.TURN_AWAITING_FIRST_WAVE)
 
-	# Reanimate Button & Type Button
+
 	if is_instance_valid(ui_reanimate_button) and is_instance_valid(ui_reanimate_type_button):
 		if is_instance_valid(reanimate_spell):
 			var selected_subtype_enum = reanimate_spell.get_subtype_enum_from_index(current_reanimate_subtype_selection_index)
@@ -171,18 +168,16 @@ func _update_all_spell_related_ui():
 			var de_cost_for_selected_subtype = reanimate_spell.get_current_de_cost(selected_subtype_enum)
 			var subtype_unlocked = reanimate_spell.spell_level >= reanimate_spell.subtype_unlock_level.get(selected_subtype_enum, 99)
 
-			if de_cost_for_selected_subtype != -1 and subtype_unlocked: # -1 means not unlocked or error
+			if de_cost_for_selected_subtype != -1 and subtype_unlocked:
 				ui_reanimate_button.text = "RNT %s (%dDE)" % [subtype_name.substr(0,3).to_upper(), de_cost_for_selected_subtype]
 				ui_reanimate_button.disabled = not can_cast_in_phase or necromancer_node.current_de < de_cost_for_selected_subtype
-			else: # Subtype not available at current spell level
+			else: 
 				ui_reanimate_button.text = "RNT %s (Lck)" % subtype_name.substr(0,3).to_upper()
 				ui_reanimate_button.disabled = true
 		else: 
-			ui_reanimate_button.text = "RNT (N/A)"
-			ui_reanimate_button.disabled = true
+			ui_reanimate_button.text = "RNT (N/A)"; ui_reanimate_button.disabled = true
 			ui_reanimate_type_button.text = "Type: (N/A)"
 	
-	# Reanimate Upgrade Button
 	if is_instance_valid(ui_reanimate_upgrade_button):
 		if is_instance_valid(reanimate_spell):
 			if reanimate_spell.spell_level < reanimate_spell.max_spell_level:
@@ -191,26 +186,20 @@ func _update_all_spell_related_ui():
 					ui_reanimate_upgrade_button.text = "Up RNT L%d (%dMP)" % [reanimate_spell.spell_level + 1, mp_cost]
 					ui_reanimate_upgrade_button.disabled = not can_upgrade_in_phase or necromancer_node.mastery_points < mp_cost
 				else: 
-					ui_reanimate_upgrade_button.text = "Up RNT (Cost?)" 
-					ui_reanimate_upgrade_button.disabled = true
+					ui_reanimate_upgrade_button.text = "Up RNT (Cost?)"; ui_reanimate_upgrade_button.disabled = true
 			else:
-				ui_reanimate_upgrade_button.text = "RNT MAX"
-				ui_reanimate_upgrade_button.disabled = true
+				ui_reanimate_upgrade_button.text = "RNT MAX"; ui_reanimate_upgrade_button.disabled = true
 		else: 
-			ui_reanimate_upgrade_button.text = "UP RNT (N/A)"
-			ui_reanimate_upgrade_button.disabled = true
+			ui_reanimate_upgrade_button.text = "UP RNT (N/A)"; ui_reanimate_upgrade_button.disabled = true
 
-	# Soul Drain Button
 	if is_instance_valid(ui_soul_drain_button):
 		if is_instance_valid(soul_drain_spell):
 			var current_de_cost = soul_drain_spell.get_current_de_cost()
 			ui_soul_drain_button.text = "DRN L%d (%dDE)" % [soul_drain_spell.spell_level, current_de_cost]
 			ui_soul_drain_button.disabled = not can_cast_in_phase or necromancer_node.current_de < current_de_cost
 		else:
-			ui_soul_drain_button.text = "DRN (N/A)"
-			ui_soul_drain_button.disabled = true
+			ui_soul_drain_button.text = "DRN (N/A)"; ui_soul_drain_button.disabled = true
 
-	# Soul Drain Upgrade Button
 	if is_instance_valid(ui_soul_drain_upgrade_button):
 		if is_instance_valid(soul_drain_spell):
 			if soul_drain_spell.spell_level < soul_drain_spell.max_spell_level:
@@ -219,57 +208,73 @@ func _update_all_spell_related_ui():
 					ui_soul_drain_upgrade_button.text = "Up DRN L%d (%dMP)" % [soul_drain_spell.spell_level + 1, mp_cost]
 					ui_soul_drain_upgrade_button.disabled = not can_upgrade_in_phase or necromancer_node.mastery_points < mp_cost
 				else:
-					ui_soul_drain_upgrade_button.text = "Up DRN (Cost?)" 
-					ui_soul_drain_upgrade_button.disabled = true
+					ui_soul_drain_upgrade_button.text = "Up DRN (Cost?)"; ui_soul_drain_upgrade_button.disabled = true
 			else:
-				ui_soul_drain_upgrade_button.text = "DRN MAX"
-				ui_soul_drain_upgrade_button.disabled = true
+				ui_soul_drain_upgrade_button.text = "DRN MAX"; ui_soul_drain_upgrade_button.disabled = true
 		else:
-			ui_soul_drain_upgrade_button.text = "UP DRN (N/A)"
-			ui_soul_drain_upgrade_button.disabled = true
+			ui_soul_drain_upgrade_button.text = "UP DRN (N/A)"; ui_soul_drain_upgrade_button.disabled = true
 	
-	# _update_reanimate_type_button_text() is now part of the Reanimate Button logic above
-
-# --- Signal Handlers ---
+# --- Signal Handlers (Consolidated UI updates) ---
 func _on_human_population_changed(new_population: int):
 	if is_instance_valid(ui_human_population_label): ui_human_population_label.text = "Humans: %d" % new_population
-	_log_message("Human population changed to: %d" % new_population, "white")
+	# Specific damage log comes from GameManager
+
 func _on_de_changed(_current_de: int, _max_de: int): 
 	_update_necromancer_labels_from_node(); _update_all_spell_related_ui() 
-func _on_level_changed(new_level: int): 
+func _on_level_changed(_new_level: int): 
 	_update_necromancer_labels_from_node(); _update_all_spell_related_ui() 
-func _on_mastery_points_changed(new_mastery_points: int):
+func _on_mastery_points_changed(_new_mastery_points: int):
 	_update_necromancer_labels_from_node(); _update_all_spell_related_ui() 
-func _on_turn_or_wave_changed(turn_number: int): 
+
+func _update_turn_wave_label():
 	if is_instance_valid(ui_turn_wave_label) and is_instance_valid(game_manager_node):
-		ui_turn_wave_label.text = "Turn: %d | Wave: %d" % [game_manager_node.current_turn, game_manager_node.current_wave_in_turn]
-	_log_message("Turn %d started." % turn_number, "white")
-	_update_proceed_button_text(); _update_all_spell_related_ui() 
-func _on_wave_started_log(wave_number: int, turn_number: int):
-	_log_message("Wave %d of Turn %d begins." % [wave_number, turn_number], "white")
-	if is_instance_valid(ui_turn_wave_label) and is_instance_valid(game_manager_node): 
-		ui_turn_wave_label.text = "Turn: %d | Wave: %d" % [game_manager_node.current_turn, game_manager_node.current_wave_in_turn]
-	_update_proceed_button_text(); _update_all_spell_related_ui()
+		if game_manager_node.current_game_phase == GameManager.GamePhase.OUT_OF_TURN and game_manager_node.current_turn == 0:
+			ui_turn_wave_label.text = "Prepare for Turn 1"
+		elif game_manager_node.current_game_phase == GameManager.GamePhase.TURN_AWAITING_FIRST_WAVE:
+			ui_turn_wave_label.text = "Turn: %d | Prep Wave 1" % game_manager_node.current_turn
+		elif game_manager_node.current_wave_in_turn > 0 :
+			ui_turn_wave_label.text = "Turn: %d | Wave: %d" % [game_manager_node.current_turn, game_manager_node.current_wave_in_turn]
+		else: # e.g. OUT_OF_TURN after turn 1
+			ui_turn_wave_label.text = "Turn: %d Complete" % game_manager_node.current_turn
+
+
+func _on_turn_started_ui_update(turn_number: int): 
+	_log_message("Turn %d started. Human reinforcements deployed." % turn_number, "white")
+	_update_turn_wave_label()
+	_update_proceed_button_ui(); _update_all_spell_related_ui() 
+
+func _on_wave_started_ui_update(wave_number: int, turn_number: int):
+	_log_message("Wave %d of Turn %d begins. Aliens inbound!" % [wave_number, turn_number], "yellow")
+	_update_turn_wave_label()
+	_update_proceed_button_ui(); _update_all_spell_related_ui()
+
 func _on_game_over(_reason_key: String, message: String): 
 	if is_instance_valid(ui_game_over_panel) and is_instance_valid(ui_game_over_status_label):
 		ui_game_over_status_label.text = "Game Over!\n%s" % message 
 		ui_game_over_panel.visible = true
 	if is_instance_valid(ui_proceed_button): ui_proceed_button.disabled = true
 	_log_message("GAME OVER: %s" % message, "red"); _update_all_spell_related_ui() 
-func _on_player_phase_started(phase_name: String): 
+
+func _on_player_phase_started_ui_update(phase_name: String): 
 	_log_message("Player Phase: %s" % phase_name, "white")
-	_update_proceed_button_text(); _update_all_spell_related_ui() 
-func _on_battle_phase_started():
-	_log_message("Battle Phase Started!", "yellow") 
-	_update_proceed_button_text(); _update_all_spell_related_ui() 
-func _on_wave_ended_log(wave_number: int, turn_number: int):
-	_log_message("Wave %d of Turn %d ended." % [wave_number, turn_number], "white")
-	_update_proceed_button_text(); _update_all_spell_related_ui()
-func _on_turn_ended_log(turn_number: int):
-	_log_message("Turn %d ended." % turn_number, "white")
-	if is_instance_valid(necromancer_node): 
-		_log_message("Necromancer DE replenished to %d." % necromancer_node.max_de, "white")
-	_update_proceed_button_text(); _update_all_spell_related_ui()
+	_update_proceed_button_ui(); _update_all_spell_related_ui() 
+
+func _on_battle_phase_started_ui_update():
+	_log_message("Battle Phase Started for Wave %d!" % game_manager_node.current_wave_in_turn, "orange") 
+	_update_proceed_button_ui(); _update_all_spell_related_ui() 
+
+func _on_wave_ended_ui_update(wave_number: int, turn_number: int):
+	_log_message("Wave %d of Turn %d processing complete." % [wave_number, turn_number], "white")
+	_update_turn_wave_label()
+	_update_proceed_button_ui(); _update_all_spell_related_ui()
+
+func _on_turn_finalized_ui_update(turn_number: int): # Changed from _on_turn_ended_log
+	_log_message("Turn %d finalized." % turn_number, "white")
+	if is_instance_valid(necromancer_node): # DE already replenished at turn start
+		pass # _log_message("Necromancer DE replenished to %d." % necromancer_node.max_de, "white")
+	_update_turn_wave_label()
+	_update_proceed_button_ui(); _update_all_spell_related_ui()
+
 func _on_spell_upgraded(spell_data: SpellData): 
 	_log_message("%s upgraded to Lvl %d." % [spell_data.spell_name, spell_data.spell_level], "green") 
 	_update_all_spell_related_ui() 
@@ -278,7 +283,7 @@ func _on_spell_upgraded(spell_data: SpellData):
 func _on_level_up_button_pressed(): 
 	if is_instance_valid(necromancer_node):
 		var old_level = necromancer_node.level
-		necromancer_node.level += 1 
+		necromancer_node.level_up_player() # Use the new method in Necromancer.gd
 		_log_message("Necromancer leveled up from Lvl %d to Lvl %d. MP +1." % [old_level, necromancer_node.level], "green") 
 
 func _on_reanimate_button_pressed():
@@ -289,7 +294,7 @@ func _on_reanimate_button_pressed():
 	var corpses = game_manager_node.get_available_corpses()
 	if corpses.is_empty(): 
 		_log_message("No corpses available to reanimate.", "yellow"); return
-	var target_corpse = corpses[0] 
+	var target_corpse = corpses[0] # Simple targeting: first available corpse
 	
 	var selected_subtype_enum = reanimate_spell.get_subtype_enum_from_index(current_reanimate_subtype_selection_index)
 	var subtype_name = reanimate_spell.get_subtype_name_from_enum(selected_subtype_enum)
@@ -298,8 +303,8 @@ func _on_reanimate_button_pressed():
 	necromancer_node.attempt_cast_spell(reanimate_spell, target_corpse, selected_subtype_enum)
 
 func _on_reanimate_type_button_pressed(): 
-	current_reanimate_subtype_selection_index = (current_reanimate_subtype_selection_index + 1) % 3 # Cycle 0, 1, 2 for 3 subtypes
-	_update_all_spell_related_ui() # This will update button texts and disabled states
+	current_reanimate_subtype_selection_index = (current_reanimate_subtype_selection_index + 1) % 3 
+	_update_all_spell_related_ui() 
 	
 	var reanimate_spell = necromancer_node.get_spell_by_name("Reanimate") as SpellReanimateData
 	if is_instance_valid(reanimate_spell):
@@ -307,91 +312,95 @@ func _on_reanimate_type_button_pressed():
 		var subtype_name = reanimate_spell.get_subtype_name_from_enum(selected_subtype_enum)
 		_log_message("Reanimate type selection changed to: %s" % subtype_name, "white")
 
-func _update_reanimate_type_button_text(): # This function is now effectively merged into _update_all_spell_related_ui
-	pass # Kept for structure, but logic moved to _update_all_spell_related_ui for Reanimate buttons
-
 func _on_soul_drain_button_pressed():
 	var soul_drain_spell = necromancer_node.get_spell_by_name("Soul Drain") as SpellSoulDrainData
 	if not is_instance_valid(soul_drain_spell): 
 		_log_message("Soul Drain spell not found.", "red"); return
 
 	var target_creature = null
-	var target_info_for_log = "AoE"
+	var target_info_for_log = "AoE" # Default for multi-target
 	if soul_drain_spell._get_num_targets_for_level() == 1: 
 		var potential_targets = game_manager_node.get_all_living_humans_and_aliens()
 		if not potential_targets.is_empty(): 
-			target_creature = potential_targets[0] 
+			target_creature = potential_targets[0] # Simple targeting: first available
 			target_info_for_log = target_creature.creature_name
 		else: 
 			_log_message("No valid targets for single-target Soul Drain.", "yellow"); return
 	
 	_log_message("Attempting Soul Drain on %s..." % target_info_for_log, "white")
-	necromancer_node.attempt_cast_spell(soul_drain_spell, target_creature, null) # Pass null for spell_specific_arg
+	necromancer_node.attempt_cast_spell(soul_drain_spell, target_creature, null)
 
 func _on_reanimate_upgrade_button_pressed():
 	if is_instance_valid(necromancer_node): 
 		var spell = necromancer_node.get_spell_by_name("Reanimate")
 		if is_instance_valid(spell):
-			if spell.spell_level < spell.max_spell_level:
-				var cost = spell.get_mastery_cost_for_next_upgrade()
-				if cost != -1 and necromancer_node.mastery_points >= cost:
-					_log_message("Attempting to upgrade Reanimate to Lvl %d for %d MP..." % [spell.spell_level + 1, cost], "white")
-					if not necromancer_node.upgrade_spell_by_name("Reanimate"): 
-						_log_message("Reanimate upgrade failed.", "red") 
-				elif cost != -1 : 
-					_log_message("Not enough MP to upgrade Reanimate (needs %d MP)." % cost, "red")
-		else: _log_message("Reanimate spell not found for upgrade.", "red")
+			necromancer_node.upgrade_spell_by_name("Reanimate") # Necromancer handles logging success/fail via signals
 
 func _on_soul_drain_upgrade_button_pressed():
 	if is_instance_valid(necromancer_node): 
 		var spell = necromancer_node.get_spell_by_name("Soul Drain")
 		if is_instance_valid(spell):
-			if spell.spell_level < spell.max_spell_level:
-				var cost = spell.get_mastery_cost_for_next_upgrade()
-				if cost != -1 and necromancer_node.mastery_points >= cost:
-					_log_message("Attempting to upgrade Soul Drain to Lvl %d for %d MP..." % [spell.spell_level + 1, cost], "white")
-					if not necromancer_node.upgrade_spell_by_name("Soul Drain"):
-						_log_message("Soul Drain upgrade failed.", "red")
-				elif cost != -1:
-					_log_message("Not enough MP to upgrade Soul Drain (needs %d MP)." % cost, "red")
-		else: _log_message("Soul Drain spell not found for upgrade.", "red")
+			necromancer_node.upgrade_spell_by_name("Soul Drain") # Necromancer handles logging
 
+# MODIFIED: Main progression button logic
 func _on_proceed_button_pressed():
 	if not is_instance_valid(game_manager_node): return
-	var action_log = "Proceeding..."
-	match game_manager_node.current_game_phase:
-		GameManager.GamePhase.OUT_OF_TURN: action_log = "Starting Turn %d." % (game_manager_node.current_turn + 1)
-		GameManager.GamePhase.PLAYER_PRE_BATTLE: action_log = "Starting Battle for Wave %d." % game_manager_node.current_wave_in_turn
-		GameManager.GamePhase.PLAYER_POST_BATTLE: action_log = "Ending actions for Wave %d." % game_manager_node.current_wave_in_turn
-		GameManager.GamePhase.WAVE_ENDING:
-			if game_manager_node.current_wave_in_turn >= game_manager_node.max_waves_per_turn:
-				action_log = "Ending Turn %d." % game_manager_node.current_turn 
-			else: action_log = "Proceeding to next Wave (%d)." % (game_manager_node.current_wave_in_turn + 1)
-		GameManager.GamePhase.TURN_ENDING: action_log = "Finalizing Turn %d." % game_manager_node.current_turn
-	_log_message(action_log, "white")
-	match game_manager_node.current_game_phase:
-		GameManager.GamePhase.OUT_OF_TURN: game_manager_node.proceed_to_next_turn()
-		GameManager.GamePhase.PLAYER_PRE_BATTLE: game_manager_node.player_ends_pre_battle_phase()
-		GameManager.GamePhase.PLAYER_POST_BATTLE: game_manager_node.player_ends_post_battle_phase()
-		GameManager.GamePhase.WAVE_ENDING: game_manager_node.proceed_to_next_wave()
-		GameManager.GamePhase.TURN_ENDING: game_manager_node.proceed_to_next_turn()
+	
+	var current_phase = game_manager_node.current_game_phase
+	# print_debug("Proceed button pressed. Current Phase: %s" % GameManager.GamePhase.keys()[current_phase])
 
-func _update_proceed_button_text():
+	match current_phase:
+		GameManager.GamePhase.OUT_OF_TURN:
+			_log_message("Starting Turn %d." % (game_manager_node.current_turn + 1), "white")
+			game_manager_node.player_starts_new_turn()
+		GameManager.GamePhase.TURN_AWAITING_FIRST_WAVE:
+			_log_message("Starting Wave 1 of Turn %d." % game_manager_node.current_turn, "white")
+			game_manager_node.player_starts_wave()
+		GameManager.GamePhase.PLAYER_PRE_BATTLE:
+			_log_message("Starting Battle for Wave %d." % game_manager_node.current_wave_in_turn, "white")
+			game_manager_node.player_ends_pre_battle_phase()
+		GameManager.GamePhase.PLAYER_POST_BATTLE:
+			_log_message("Ending actions for Wave %d." % game_manager_node.current_wave_in_turn, "white")
+			game_manager_node.player_ends_post_battle_phase()
+		GameManager.GamePhase.WAVE_CONCLUDED_AWAITING_NEXT:
+			_log_message("Starting next Wave (%d)." % (game_manager_node.current_wave_in_turn + 1), "white")
+			game_manager_node.player_starts_wave()
+		GameManager.GamePhase.TURN_ENDING_AWAIT_CONFIRM:
+			_log_message("Finalizing Turn %d." % game_manager_node.current_turn, "white")
+			game_manager_node.player_confirms_end_turn()
+		_:
+			_log_message("Proceed button pressed in unhandled phase: %s" % GameManager.GamePhase.keys()[current_phase], "red")
+
+# MODIFIED: Button text and disabled state logic
+func _update_proceed_button_ui():
 	if not is_instance_valid(ui_proceed_button) or not is_instance_valid(game_manager_node): return
-	ui_proceed_button.disabled = false 
-	match game_manager_node.current_game_phase:
-		GameManager.GamePhase.OUT_OF_TURN: ui_proceed_button.text = "START TURN %d" % (game_manager_node.current_turn + 1)
-		GameManager.GamePhase.TURN_STARTING: ui_proceed_button.text = "PREPARING..."; ui_proceed_button.disabled = true 
-		GameManager.GamePhase.PLAYER_PRE_BATTLE: ui_proceed_button.text = "START BATTLE (W%d)" % game_manager_node.current_wave_in_turn
-		GameManager.GamePhase.BATTLE_IN_PROGRESS: ui_proceed_button.text = "BATTLE..."; ui_proceed_button.disabled = true
-		GameManager.GamePhase.PLAYER_POST_BATTLE: ui_proceed_button.text = "END WAVE %d ACTIONS" % game_manager_node.current_wave_in_turn
-		GameManager.GamePhase.WAVE_ENDING:
-			if game_manager_node.current_wave_in_turn >= game_manager_node.max_waves_per_turn:
-				ui_proceed_button.text = "END TURN %d" % game_manager_node.current_turn 
-			else: ui_proceed_button.text = "NEXT WAVE (%d)" % (game_manager_node.current_wave_in_turn + 1)
-		GameManager.GamePhase.TURN_ENDING: ui_proceed_button.text = "ENDING TURN..."; ui_proceed_button.disabled = true 
-		GameManager.GamePhase.NONE: ui_proceed_button.text = "GAME OVER"; ui_proceed_button.disabled = true
-		_: ui_proceed_button.text = "PROCEED"; ui_proceed_button.disabled = true
+	
+	ui_proceed_button.disabled = false # Enable by default, disable specifically
+	var current_phase = game_manager_node.current_game_phase
+
+	match current_phase:
+		GameManager.GamePhase.OUT_OF_TURN:
+			ui_proceed_button.text = "START TURN %d" % (game_manager_node.current_turn + 1)
+		GameManager.GamePhase.TURN_STARTING:
+			ui_proceed_button.text = "PREPARING TURN..."; ui_proceed_button.disabled = true 
+		GameManager.GamePhase.TURN_AWAITING_FIRST_WAVE:
+			ui_proceed_button.text = "START WAVE 1"
+		GameManager.GamePhase.PLAYER_PRE_BATTLE:
+			ui_proceed_button.text = "START BATTLE (W%d)" % game_manager_node.current_wave_in_turn
+		GameManager.GamePhase.BATTLE_IN_PROGRESS:
+			ui_proceed_button.text = "BATTLE IN PROGRESS..."; ui_proceed_button.disabled = true
+		GameManager.GamePhase.PLAYER_POST_BATTLE:
+			ui_proceed_button.text = "END WAVE %d ACTIONS" % game_manager_node.current_wave_in_turn
+		GameManager.GamePhase.WAVE_CONCLUDED_AWAITING_NEXT:
+			ui_proceed_button.text = "START WAVE %d" % (game_manager_node.current_wave_in_turn + 1)
+		GameManager.GamePhase.TURN_ENDING_AWAIT_CONFIRM:
+			ui_proceed_button.text = "END TURN %d" % game_manager_node.current_turn
+		GameManager.GamePhase.TURN_ENDING:
+			ui_proceed_button.text = "ENDING TURN..."; ui_proceed_button.disabled = true 
+		GameManager.GamePhase.NONE: # Game Over
+			ui_proceed_button.text = "GAME OVER"; ui_proceed_button.disabled = true
+		_:
+			ui_proceed_button.text = "PROCEED (?)"; ui_proceed_button.disabled = true # Should not happen
 
 func _on_restart_button_pressed():
 	_log_message("Restarting game...", "white")
