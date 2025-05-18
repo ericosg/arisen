@@ -16,8 +16,7 @@ script = ExtResource("1_kiw3p")
 layer = -1
 
 [node name="BackGround" type="TextureRect" parent="BG"]
-offset_left = -8.0
-offset_right = 1528.0
+offset_right = 1536.0
 offset_bottom = 1024.0
 texture = ExtResource("4_qy1jj")
 
@@ -29,10 +28,10 @@ offset_bottom = 1000.0
 texture = ExtResource("5_3xj3m")
 
 [node name="Help" type="TextureRect" parent="BG"]
-offset_left = 1640.0
-offset_top = 16.0
-offset_right = 3176.0
-offset_bottom = 1040.0
+offset_left = 1608.0
+offset_top = 88.0
+offset_right = 3144.0
+offset_bottom = 1112.0
 texture = ExtResource("6_mcffj")
 
 [node name="GameManagerNode" type="Node" parent="."]
@@ -42,67 +41,67 @@ script = ExtResource("2_g4kob")
 script = ExtResource("2_400sg")
 
 [node name="BattleGridNode" type="Node2D" parent="."]
-position = Vector2(256, 192)
+position = Vector2(448, 192)
 script = ExtResource("3_g4kob")
 
 [node name="UnitsContainerNode" type="Node2D" parent="."]
-position = Vector2(256, 192)
+position = Vector2(448, 192)
 
 [node name="UI" type="CanvasLayer" parent="."]
 
 [node name="Level" type="Label" parent="UI"]
-offset_left = 16.0
+offset_left = 576.0
 offset_top = 16.0
-offset_right = 56.0
+offset_right = 616.0
 offset_bottom = 45.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
-text = "1"
+text = "Level"
 metadata/_edit_use_anchors_ = true
 
 [node name="DarkEnergy" type="Label" parent="UI"]
-offset_left = 16.0
+offset_left = 576.0
 offset_top = 80.0
-offset_right = 56.0
+offset_right = 616.0
 offset_bottom = 109.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
-text = "2"
+text = "Dark Energy"
 metadata/_edit_use_anchors_ = true
 
 [node name="MaxDarkEnergy" type="Label" parent="UI"]
-offset_left = 16.0
-offset_top = 144.0
-offset_right = 56.0
-offset_bottom = 173.0
+offset_left = 832.0
+offset_top = 80.0
+offset_right = 872.0
+offset_bottom = 109.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
-text = "3"
+text = "(Max)"
 metadata/_edit_use_anchors_ = true
 
 [node name="MasteryPoints" type="Label" parent="UI"]
-offset_left = 464.0
+offset_left = 832.0
 offset_top = 16.0
-offset_right = 504.0
+offset_right = 872.0
 offset_bottom = 45.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
-text = "4"
+text = "Mastery Points"
 
 [node name="LevelUp" type="Button" parent="UI"]
-offset_left = 80.0
-offset_top = 16.0
-offset_right = 300.0
-offset_bottom = 56.0
+offset_left = 1312.0
+offset_top = 8.0
+offset_right = 1528.0
+offset_bottom = 48.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"FlatButton"
-text = "LEVEL UP"
+text = "LVL+"
 
 [node name="Reanimate" type="Button" parent="UI"]
-offset_left = 80.0
-offset_top = 80.0
-offset_right = 340.0
-offset_bottom = 120.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 268.0
+offset_bottom = 48.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"FlatButton"
 text = "REANIMATE
@@ -114,10 +113,10 @@ anchor_left = 1.0
 anchor_top = 0.5
 anchor_right = 1.0
 anchor_bottom = 0.5
-offset_left = -400.0
-offset_top = -496.0
-offset_right = -12.0
-offset_bottom = -456.0
+offset_left = -1528.0
+offset_top = -408.0
+offset_right = -1140.0
+offset_bottom = -368.0
 grow_horizontal = 0
 grow_vertical = 2
 theme = ExtResource("7_2rd6h")
@@ -126,28 +125,28 @@ text = "REANIMATE TYPE
 "
 
 [node name="SoulDrain" type="Button" parent="UI"]
-offset_left = 80.0
-offset_top = 144.0
-offset_right = 348.0
-offset_bottom = 184.0
+offset_left = 8.0
+offset_top = 192.0
+offset_right = 276.0
+offset_bottom = 232.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"FlatButton"
 text = "SOUL DRAIN"
 
 [node name="ReanimateUpgrade" type="Button" parent="UI"]
-offset_left = 1136.0
-offset_top = 80.0
-offset_right = 1356.0
-offset_bottom = 120.0
+offset_left = 8.0
+offset_top = 56.0
+offset_right = 228.0
+offset_bottom = 96.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"FlatButton"
 text = "LEVEL UP"
 
 [node name="SoulDrainUpgrade" type="Button" parent="UI"]
-offset_left = 1136.0
-offset_top = 144.0
-offset_right = 1356.0
-offset_bottom = 184.0
+offset_left = 8.0
+offset_top = 240.0
+offset_right = 228.0
+offset_bottom = 280.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"FlatButton"
 text = "LEVEL UP"
@@ -169,9 +168,10 @@ theme_type_variation = &"FlatButton"
 text = "START"
 
 [node name="Log" type="Label" parent="UI"]
-offset_top = 256.0
-offset_right = 1536.0
-offset_bottom = 800.0
+offset_left = 8.0
+offset_top = 288.0
+offset_right = 448.0
+offset_bottom = 1016.0
 
 [node name="GameOver" type="Panel" parent="UI"]
 anchors_preset = 7
@@ -201,19 +201,19 @@ offset_bottom = 112.0
 text = "RESTART"
 
 [node name="HumanPopulationLabel" type="Label" parent="UI"]
-offset_left = 464.0
-offset_top = 80.0
-offset_right = 504.0
-offset_bottom = 109.0
-theme = ExtResource("7_2rd6h")
-theme_type_variation = &"HeaderLarge"
-text = "5"
-
-[node name="TurnWaveLabel" type="Label" parent="UI"]
-offset_left = 464.0
+offset_left = 576.0
 offset_top = 144.0
-offset_right = 504.0
+offset_right = 616.0
 offset_bottom = 173.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
-text = "6"
+text = "Turn"
+
+[node name="TurnWaveLabel" type="Label" parent="UI"]
+offset_left = 832.0
+offset_top = 144.0
+offset_right = 872.0
+offset_bottom = 173.0
+theme = ExtResource("7_2rd6h")
+theme_type_variation = &"HeaderLarge"
+text = "Humans"
