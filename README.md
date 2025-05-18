@@ -46,6 +46,7 @@
 - **Art & Animation:** Aseprite  
 - **Sound & Music:**  
   - Track: “00:00 Neon Syndicate” (YouTube: https://www.youtube.com/watch?v=-8N1suW6aqw)  
+  + https://www.youtube.com/watch?v=R7NvGItVlA8
 - **AI Usage:**  
   - All AI-generated text/images are tracked alongside their prompts in `AI_LOG.md`.  
 - **Version Control:** Git
