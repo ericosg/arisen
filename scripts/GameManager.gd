@@ -138,7 +138,6 @@ func player_ends_pre_battle_phase():
 	emit_signal("game_event_log_requested", "Player ends pre-battle preparations.", "white")
 	_initiate_battle_phase()
 
-# MODIFIED: Removed call to _advance_aliens()
 func _initiate_battle_phase():
 	_change_game_phase(GamePhase.BATTLE_IN_PROGRESS)
 	emit_signal("battle_phase_started") 
@@ -146,7 +145,6 @@ func _initiate_battle_phase():
 	
 	for col_idx in range(battle_grid_node.GRID_COLUMNS):
 		_resolve_combat_in_lane(col_idx)
-		# If game over due to population loss during combat resolution, stop processing more lanes.
 		if human_civilian_population <= 0 and current_game_phase == GamePhase.NONE:
 			return 
 			
@@ -158,10 +156,7 @@ func player_ends_post_battle_phase():
 	emit_signal("game_event_log_requested", "Player ends post-battle actions.", "white")
 	_end_current_wave()
 
-# MODIFIED: Removed call to _process_aliens_reaching_population()
 func _end_current_wave():
-	# Population damage is now handled within _resolve_combat_in_lane
-
 	emit_signal("wave_ended", current_wave_in_turn, current_turn)
 	_change_game_phase(GamePhase.WAVE_ENDING)
 	
@@ -174,8 +169,6 @@ func _end_current_wave():
 	if not aliens_remain_on_grid and not more_aliens_expected_this_turn:
 		emit_signal("game_event_log_requested", "All alien waves cleared for this turn.", "green")
 		_end_current_turn()
-
-# REMOVED: _process_aliens_reaching_population() function, logic moved to _resolve_combat_in_lane
 
 func _end_current_turn():
 	_change_game_phase(GamePhase.TURN_ENDING)
@@ -433,32 +426,29 @@ func _remove_corpse_from_list(corpse: CorpseData, reason: String = "removed"):
 		available_corpses.erase(corpse)
 		emit_signal("corpse_removed", corpse)
 
-# --- COMBAT RESOLUTION (Revised Pass-Through Logic) ---
+# --- COMBAT RESOLUTION (Corrected Pass-Through Rule) ---
 func _resolve_combat_in_lane(col_idx: int) -> bool:
-	var activity_in_lane = false # Tracks if any combat or pass-through happened
+	var activity_in_lane = false 
 	
-	# It's crucial to get the correct row indices for player and alien sides
-	var player_front_row_y = battle_grid_node.get_player_row_y_by_faction_row_num(3) # Closest to center
-	var player_mid_row_y = battle_grid_node.get_player_row_y_by_faction_row_num(2)
-	var player_back_row_y = battle_grid_node.get_player_row_y_by_faction_row_num(1) # Furthest from center (home row)
-	
-	var alien_front_row_y = battle_grid_node.get_alien_row_y_by_faction_row_num(3) # Closest to center
-	var alien_mid_row_y = battle_grid_node.get_alien_row_y_by_faction_row_num(2)
-	var alien_back_row_y = battle_grid_node.get_alien_row_y_by_faction_row_num(1) # Furthest from center (spawn row)
+	var player_rows_to_check_for_defender = [
+		battle_grid_node.get_player_row_y_by_faction_row_num(3), 
+		battle_grid_node.get_player_row_y_by_faction_row_num(2),
+		battle_grid_node.get_player_row_y_by_faction_row_num(1)  
+	]
+	var alien_rows_to_check_for_attacker = [
+		battle_grid_node.get_alien_row_y_by_faction_row_num(3), 
+		battle_grid_node.get_alien_row_y_by_faction_row_num(2),
+		battle_grid_node.get_alien_row_y_by_faction_row_num(1)  
+	]
 
-	# Order to check player rows for a defender: from their front to their back
-	var player_rows_to_check_for_defender = [player_front_row_y, player_mid_row_y, player_back_row_y]
-	# Order to check alien rows for an attacker: from their front to their back
-	var alien_rows_to_check_for_attacker = [alien_front_row_y, alien_mid_row_y, alien_back_row_y]
-
-	while true: # Loop to handle multiple aliens in a column or cascading effects
+	while true: 
 		var player_unit: Creature = null
 		for r_y in player_rows_to_check_for_defender:
 			if r_y == -1: continue
 			var c = battle_grid_node.get_creature_at(Vector2i(col_idx, r_y))
 			if is_instance_valid(c) and c.is_alive and (c.faction == Creature.Faction.HUMAN or c.faction == Creature.Faction.UNDEAD):
 				player_unit = c
-				break # Found the foremost player defender in this column
+				break 
 
 		var alien_unit: Creature = null
 		for r_y in alien_rows_to_check_for_attacker:
@@ -466,83 +456,75 @@ func _resolve_combat_in_lane(col_idx: int) -> bool:
 			var c = battle_grid_node.get_creature_at(Vector2i(col_idx, r_y))
 			if is_instance_valid(c) and c.is_alive and c.faction == Creature.Faction.ALIEN:
 				alien_unit = c
-				break # Found the foremost alien attacker in this column
+				break 
 
 		if not is_instance_valid(alien_unit):
-			break # No more aliens in this column to process for this wave
+			break # No more aliens in this column.
 
-		activity_in_lane = true # An alien is present, so some activity will occur
+		activity_in_lane = true
 
-		# Case 1: Alien exists, but no Player Defender in the entire column
+		# Scenario 1: Alien is unblocked (no player unit in the column)
 		if not is_instance_valid(player_unit):
 			var damage = alien_unit.level * alien_unit.attack_power * randi_range(1, 10)
-			emit_signal("game_event_log_requested", "Alien '%s' (L%d AP%d) passed (NO defender in lane!), dealing %d dmg to population." % [alien_unit.creature_name, alien_unit.level, alien_unit.attack_power, damage], "red")
+			emit_signal("game_event_log_requested", "Alien '%s' (L%d AP%d) passed UNBLOCKED, dealing %d dmg to population." % [alien_unit.creature_name, alien_unit.level, alien_unit.attack_power, damage], "red")
 			_set_human_civilian_population(human_civilian_population - damage)
-			_remove_creature_from_game(alien_unit, "passed through (unblocked lane)")
-			if human_civilian_population <= 0: return true # Game over
-			continue # Check if there's another alien behind this one in the same column
+			_remove_creature_from_game(alien_unit, "passed (unblocked)")
+			if human_civilian_population <= 0: return true 
+			continue # Process next alien in the column if any.
 
-		# Case 2: Both Alien and Player Defender exist
+		# Scenario 2: Alien and Player unit exist.
 		var p_name = player_unit.creature_name; var p_lvl = player_unit.level
 		var a_name = alien_unit.creature_name; var a_lvl = alien_unit.level
 		var p_fac_str = Creature.Faction.keys()[player_unit.faction]
 		var a_fac_str = Creature.Faction.keys()[alien_unit.faction]
 
-		# Subcase 2a: Flying Alien bypasses non-flying/non-reach Defender
+		# Scenario 2a: Flying Alien bypasses non-flying/non-reach Defender
 		if alien_unit.is_flying and not player_unit.is_flying and not player_unit.has_reach:
-			# Check if the alien is already past the player unit or in the same row.
-			# This logic assumes aliens attack "down" the grid (increasing Y).
-			# If alien Y is less than player Y, it's "above" or further away.
-			# If alien Y is >= player Y, it's at or past the defender.
-			# For a flying bypass, the alien must be "attacking" from a row further up.
-			if alien_unit.grid_pos.y < player_unit.grid_pos.y : # Alien is in a row "before" the player unit
+			if alien_unit.grid_pos.y < player_unit.grid_pos.y : 
 				emit_signal("game_event_log_requested", "%s '%s' (L%d) flies over %s '%s' (L%d)!" % [a_fac_str, a_name, a_lvl, p_fac_str, p_name, p_lvl], "yellow")
 				var damage = alien_unit.level * alien_unit.attack_power * randi_range(1, 10)
-				emit_signal("game_event_log_requested", "Flying Alien '%s' (L%d AP%d) bypassed defenses, dealing %d dmg to population." % [alien_unit.creature_name, alien_unit.level, alien_unit.attack_power, damage], "red")
+				emit_signal("game_event_log_requested", "Flying Alien '%s' (L%d AP%d) BYPASSED, dealing %d dmg to population." % [a_name, a_lvl, alien_unit.attack_power, damage], "red")
 				_set_human_civilian_population(human_civilian_population - damage)
-				_remove_creature_from_game(alien_unit, "passed through (flew over defender)")
-				if human_civilian_population <= 0: return true # Game over
-				continue # Check next alien in the column
-			# else: flying alien is at or past the defender, normal combat or unblocked logic will apply if defender dies.
-
-		# Subcase 2b: Standard Combat
+				_remove_creature_from_game(alien_unit, "passed (flew over)")
+				if human_civilian_population <= 0: return true 
+				continue # Process next alien in the column.
+		
+		# Scenario 2b: Standard Combat - Alien is BLOCKED.
+		# Alien attacks player, player attacks alien. No population damage from this direct combat.
 		var p_hp_old = player_unit.current_health; var p_ap = player_unit.attack_power
 		var a_hp_old = alien_unit.current_health; var a_ap = alien_unit.attack_power
 
-		# Player unit attacks alien unit
-		if player_unit.can_attack_target(alien_unit): # Check if player can attack (e.g. range for flyers)
-			emit_signal("game_event_log_requested", "%s '%s' (L%d AP:%d) attacks %s '%s' (L%d HP:%d)." % [p_fac_str, p_name, p_lvl, p_ap, a_fac_str, a_name, a_lvl, a_hp_old], "white")
+		emit_signal("game_event_log_requested", "COMBAT: %s '%s' (L%d) vs %s '%s' (L%d) in col %d" % [p_fac_str, p_name, p_lvl, a_fac_str, a_name, a_lvl, col_idx], "white")
+
+		if player_unit.can_attack_target(alien_unit):
+			emit_signal("game_event_log_requested", " -> %s attacks %s (HP:%d)." % [p_name, a_name, a_hp_old], "white")
 			alien_unit.take_damage(p_ap) 
-			emit_signal("game_event_log_requested", " -> '%s' takes %d. HP: %d/%d." % [a_name, p_ap, alien_unit.current_health, alien_unit.max_health], "white")
+			emit_signal("game_event_log_requested", "    L-> '%s' HP: %d/%d." % [a_name, alien_unit.current_health, alien_unit.max_health], "white")
 		else:
-			emit_signal("game_event_log_requested", "%s '%s' (L%d) cannot attack %s '%s' (L%d) (e.g. range/flying)." % [p_fac_str, p_name, p_lvl, a_fac_str, a_name, a_lvl], "gray")
+			emit_signal("game_event_log_requested", " -> %s cannot attack %s." % [p_name, a_name], "gray")
 
-
-		# Alien unit attacks player unit (if alien is still alive)
-		if alien_unit.is_alive:
+		if alien_unit.is_alive: # Alien only attacks if it survived player's attack
 			if alien_unit.can_attack_target(player_unit):
-				emit_signal("game_event_log_requested", "%s '%s' (L%d AP:%d) attacks %s '%s' (L%d HP:%d)." % [a_fac_str, a_name, a_lvl, a_ap, p_fac_str, p_name, p_lvl, p_hp_old], "white")
+				emit_signal("game_event_log_requested", " -> %s attacks %s (HP:%d)." % [a_name, p_name, p_hp_old], "white")
 				player_unit.take_damage(a_ap)
-				emit_signal("game_event_log_requested", " -> '%s' takes %d. HP: %d/%d." % [p_name, a_ap, player_unit.current_health, player_unit.max_health], "white")
-			else: # Should be rare if alien engaged, but for completeness
-				emit_signal("game_event_log_requested", "%s '%s' (L%d) cannot attack %s '%s' (L%d) (e.g. range/flying)." % [a_fac_str, a_name, a_lvl, p_fac_str, p_name, p_lvl], "gray")
-
-
-		# If either unit died, the loop continues. The next iteration will:
-		# - Find the next alien if the current one died.
-		# - Find no player_unit if the defender died, leading to a pass-through for the current or next alien.
+				emit_signal("game_event_log_requested", "    L-> '%s' HP: %d/%d." % [p_name, player_unit.current_health, player_unit.max_health], "white")
+			else:
+				emit_signal("game_event_log_requested", " -> %s cannot attack %s." % [a_name, p_name], "gray")
+		
+		# If player unit died, the next iteration of the while loop for this column
+		# will find no player_unit, and the current alien_unit (if alive) or a subsequent one
+		# will then "pass through unblocked".
+		# If alien unit died, the next iteration will find the next alien.
+		# If both survived, this specific combat pairing is done.
 		if (is_instance_valid(player_unit) and not player_unit.is_alive) or \
 		   (is_instance_valid(alien_unit) and not alien_unit.is_alive):
-			pass # Loop will re-evaluate the lane
+			pass # Continue the while loop to re-evaluate the lane.
 		else:
-			# Both survived this specific engagement. No more actions for this pair in this iteration.
-			# If there are aliens behind the current one, they won't act until this one is gone.
-			break # End combat for this column for this wave pass
+			# Both survived, the alien was blocked. End processing for this column in this wave's combat phase.
+			# Any aliens further back in the same column are also considered blocked by this engagement.
+			break 
 			
 	return activity_in_lane
-
-
-# REMOVED: _advance_aliens() function, as aliens don't "walk" to pass through.
 
 # --- UTILITY / GETTER METHODS ---
 func get_available_corpses() -> Array[CorpseData]:
