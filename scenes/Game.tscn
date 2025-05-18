@@ -50,39 +50,36 @@ position = Vector2(448, 192)
 [node name="UI" type="CanvasLayer" parent="."]
 
 [node name="Level" type="Label" parent="UI"]
-offset_left = 576.0
+offset_left = 512.0
 offset_top = 16.0
-offset_right = 616.0
+offset_right = 628.0
 offset_bottom = 45.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
 text = "Level"
-metadata/_edit_use_anchors_ = true
 
 [node name="DarkEnergy" type="Label" parent="UI"]
-offset_left = 576.0
+offset_left = 512.0
 offset_top = 80.0
-offset_right = 616.0
+offset_right = 771.0
 offset_bottom = 109.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
 text = "Dark Energy"
-metadata/_edit_use_anchors_ = true
 
 [node name="MaxDarkEnergy" type="Label" parent="UI"]
-offset_left = 832.0
+offset_left = 896.0
 offset_top = 80.0
-offset_right = 872.0
+offset_right = 1026.0
 offset_bottom = 109.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
 text = "(Max)"
-metadata/_edit_use_anchors_ = true
 
 [node name="MasteryPoints" type="Label" parent="UI"]
-offset_left = 832.0
+offset_left = 896.0
 offset_top = 16.0
-offset_right = 872.0
+offset_right = 1222.0
 offset_bottom = 45.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
@@ -203,18 +200,18 @@ offset_bottom = 112.0
 text = "RESTART"
 
 [node name="HumanPopulationLabel" type="Label" parent="UI"]
-offset_left = 576.0
+offset_left = 512.0
 offset_top = 144.0
-offset_right = 616.0
+offset_right = 666.0
 offset_bottom = 173.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
 text = "Humans"
 
 [node name="TurnWaveLabel" type="Label" parent="UI"]
-offset_left = 832.0
+offset_left = 896.0
 offset_top = 144.0
-offset_right = 872.0
+offset_right = 994.0
 offset_bottom = 173.0
 theme = ExtResource("7_2rd6h")
 theme_type_variation = &"HeaderLarge"
