@@ -28,10 +28,10 @@ offset_bottom = 1000.0
 texture = ExtResource("5_3xj3m")
 
 [node name="Help" type="TextureRect" parent="BG"]
-offset_left = 1608.0
-offset_top = 88.0
-offset_right = 3144.0
-offset_bottom = 1112.0
+offset_left = 1679.0
+offset_top = 28.0
+offset_right = 3215.0
+offset_bottom = 1052.0
 texture = ExtResource("6_mcffj")
 
 [node name="GameManagerNode" type="Node" parent="."]
@@ -46,6 +46,15 @@ script = ExtResource("3_g4kob")
 
 [node name="UnitsContainerNode" type="Node2D" parent="."]
 position = Vector2(448, 192)
+
+[node name="UndeadContainerNode" type="ScrollContainer" parent="."]
+offset_left = 1457.0
+offset_top = 192.0
+offset_right = 1457.0
+offset_bottom = 192.0
+
+[node name="UndeadListVBox" type="VBoxContainer" parent="UndeadContainerNode"]
+layout_mode = 2
 
 [node name="UI" type="CanvasLayer" parent="."]
 
