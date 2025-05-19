@@ -155,9 +155,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -144.0
-offset_top = 448.0
+offset_top = 456.0
 offset_right = 144.0
-offset_bottom = 512.0
+offset_bottom = 504.0
 grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("7_2rd6h")
@@ -167,22 +167,32 @@ text = "START"
 [node name="Log" type="RichTextLabel" parent="UI"]
 offset_left = 8.0
 offset_top = 288.0
-offset_right = 448.0
+offset_right = 432.0
 offset_bottom = 1016.0
 theme = ExtResource("7_2rd6h")
 theme_override_font_sizes/normal_font_size = 12
+scroll_active = false
+scroll_following = true
+vertical_alignment = 2
+
+[node name="ColorRect" type="ColorRect" parent="UI/Log"]
+modulate = Color(0, 0, 0, 0.219608)
+layout_mode = 0
+offset_right = 424.0
+offset_bottom = 728.0
 
 [node name="GameOver" type="Panel" parent="UI"]
-anchors_preset = 7
+anchors_preset = 8
 anchor_left = 0.5
-anchor_top = 1.0
+anchor_top = 0.5
 anchor_right = 0.5
-anchor_bottom = 1.0
+anchor_bottom = 0.5
 offset_left = -156.0
-offset_top = -128.0
+offset_top = -64.0
 offset_right = 156.0
+offset_bottom = 64.0
 grow_horizontal = 2
-grow_vertical = 0
+grow_vertical = 2
 
 [node name="Status" type="Label" parent="UI/GameOver"]
 layout_mode = 0
@@ -194,9 +204,9 @@ offset_bottom = 71.0
 [node name="Restart" type="Button" parent="UI/GameOver"]
 layout_mode = 0
 offset_left = 116.0
-offset_top = 96.0
+offset_top = 80.0
 offset_right = 196.0
-offset_bottom = 112.0
+offset_bottom = 111.0
 text = "RESTART"
 
 [node name="HumanPopulationLabel" type="Label" parent="UI"]

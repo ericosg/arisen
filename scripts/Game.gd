@@ -42,7 +42,7 @@ var current_reanimate_subtype_selection_index: int = 0
 
 # --- Game Log ---
 var game_log_messages: Array[String] = []
-const MAX_LOG_LINES: int = 20 
+const MAX_LOG_LINES: int = 200 
 
 
 func _ready():
